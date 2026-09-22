@@ -58,7 +58,10 @@ export default async function VerCertificado({ params }: { params: Promise<{ id:
           <div style={{ borderTop: '1px solid var(--ink)', paddingTop: 6, textAlign: 'center', fontSize: 12 }} className="muted">Conformidad del cliente</div>
           <div style={{ borderTop: '1px solid var(--ink)', paddingTop: 6, textAlign: 'center', fontSize: 12 }} className="muted">Nor Movimiento SAS</div>
         </div>
-        <p className="no-print" style={{ marginTop: 20 }}><PrintButton /></p>
+        <p className="no-print" style={{ marginTop: 20, display: 'flex', gap: 8 }}>
+          <PrintButton />
+          <a href={`/api/certificados/${id}/excel`}><button type="button">Exportar Excel</button></a>
+        </p>
       </div>
     </div>
   );

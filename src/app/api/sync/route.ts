@@ -2,7 +2,7 @@
    (ver apps-script/), y lo sube a la base con la misma lógica que el importador manual.
    No usa la sesión del usuario: valida un secreto compartido y usa la service role key. */
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { importarPlanilla, importarDiego, importarCombustible } from '@/lib/sheets/importar';
 import type { Libro } from '@/lib/sheets/parsers';
 
@@ -43,10 +43,21 @@ export async function POST(req: Request) {
 
   try {
     const resumen = await IMPORTADORES[archivo](body.sheets, db);
+    await registrar(db, archivo, true, resumen, null);
     return NextResponse.json({ ok: true, archivo, resumen });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`[sync:${archivo}]`, msg);
+    await registrar(db, archivo, false, null, msg);
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  }
+}
+
+/** Deja registro en sync_log para poder ver el estado del sync desde la app (pantalla "Sistema"). */
+async function registrar(db: SupabaseClient, archivo: string, ok: boolean, resumen: string | null, error: string | null) {
+  try {
+    await db.from('sync_log').insert({ archivo, ok, resumen, error });
+  } catch (e) {
+    console.error('[sync_log]', e); // no hacemos fallar el sync por esto
   }
 }

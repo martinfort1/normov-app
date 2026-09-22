@@ -14,16 +14,18 @@ Chofer → WhatsApp → Admin carga en Sheets → Apps Script (automático) → 
 | Pieza | Estado |
 |---|---|
 | Esquema SQL (remitos, certificados, proveedores, cheques, combustible, roles, RLS, vistas) | corrido en producción |
-| Función `crear_certificado` (0002, atómica) | **falta correr** si armaste tu proyecto antes de este cambio |
-| Importador de planillas (.xlsx) | probado con datos reales (planilla y combustible); falta la planilla "Diego" |
-| Login con email y contraseña | funcionando |
+| Migraciones 0002 (certificados atómicos), 0003 (clave de remito por fecha) | corridas en producción |
+| Migración 0004 (`sync_log`, pantalla Sistema) | **nueva — falta correr** |
+| Importador de planillas (.xlsx) | respaldo manual; el sync automático ya cubre las tres planillas |
+| Login con email y contraseña | funcionando, en producción (Vercel) |
 | Login con Google | pendiente (necesita Client ID de Google Cloud) |
 | Operaciones (Día/Mes/Año/Rango, filtros por cliente/material/camión/chofer/cantera, torta por cliente) | funcionando |
 | Combustible (con período y torta por patente) | funcionando |
-| Saldos de clientes y de proveedores, Cheques (con filtro de período opcional, por vencimiento) | funcionando (clientes y proveedores necesitan la planilla "Diego" importada) |
-| Certificados (armar, guardar, aprobar/anular, imprimir a PDF) | funcionando; el Excel queda pendiente |
+| Saldos de clientes y de proveedores, Cheques (con filtro de período opcional, por vencimiento) | funcionando |
+| Certificados (armar, guardar, aprobar/anular, imprimir a PDF, exportar Excel) | funcionando |
+| Pantalla "Sistema" (estado del sync, historial) | nueva — necesita la migración 0004 |
 | Lectura de remitos desde foto | pendiente (etapa 2) |
-| Sync automático desde Google Sheets (`/api/sync` + Apps Script) | listo; **falta desplegar la app en algún lugar público e instalar el script en cada planilla** (ver abajo) |
+| Sync automático desde Google Sheets (`/api/sync` + Apps Script) | **en producción**, con activadores cada 15-30 min en las tres planillas |
 
 Typecheck y build (`npm run typecheck`, `npm run build`) pasan sin errores. El funcionamiento en el navegador lo vas probando vos: si algo no anda o se ve raro, avisá con el error o una captura.
 
@@ -32,7 +34,7 @@ Typecheck y build (`npm run typecheck`, `npm run build`) pasan sin errores. El f
 Requisitos: Node 20.6 o superior y una cuenta de Supabase.
 
 1. **Proyecto Supabase:** crealo y copiá la URL, la `anon key` (o *publishable*) y la `service_role key` (o *secret*) desde Project Settings → API.
-2. **Base:** pegá y ejecutá en el SQL Editor, en este orden, `supabase/migrations/0001_schema.sql` y después `0002_certificados_rpc.sql` (requiere Postgres 15 o superior, el default de Supabase).
+2. **Base:** pegá y ejecutá en el SQL Editor, en orden, los archivos de `supabase/migrations/` (0001, 0002, 0003, 0004…). Requiere Postgres 15 o superior, el default de Supabase.
 3. **Primer usuario (email y contraseña):** en Supabase, Authentication → Users → *Add user* → *Create new user*. Ingresá email y contraseña y tildá *Auto Confirm User*.
    *Google (opcional, más adelante):* Authentication → Sign In / Providers → Google requiere un Client ID y Secret de Google Cloud. Al activarlo, poné `NEXT_PUBLIC_GOOGLE_LOGIN=1` en `.env.local` para que aparezca el botón.
 4. **Variables:** `cp .env.example .env.local` y completalo.

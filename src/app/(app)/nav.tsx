@@ -9,6 +9,7 @@ const TABS = [
   ['/proveedores', 'Saldos proveedores'],
   ['/cheques', 'Cheques'],
   ['/combustible', 'Combustible'],
+  ['/sistema', 'Sistema'],
 ] as const;
 
 export function Nav() {
