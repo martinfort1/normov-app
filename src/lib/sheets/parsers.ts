@@ -1,9 +1,12 @@
-/* Parsers de las planillas de Google Sheets (exportadas como .xlsx).
-   Solo los usa scripts/import-sheets.ts. Cuando la carga pase a la app, se eliminan. */
+/* Parsers de las planillas de Google Sheets.
+   Trabajan sobre un "Libro": un mapa { nombre de hoja -> filas (array de arrays) },
+   sin depender de si esas filas vinieron de un .xlsx (scripts/import-sheets.ts) o
+   directo de la planilla en vivo (src/app/api/sync/route.ts, vía Apps Script). */
 import * as XLSX from 'xlsx';
 
 type Cell = unknown;
-type Row = Cell[];
+export type Row = Cell[];
+export type Libro = Record<string, Row[]>;
 
 export const clean = (s: unknown) => String(s ?? '').replace(/\\/g, '').replace(/\s+/g, ' ').trim();
 export const up = (s: unknown) => clean(s).toUpperCase();
@@ -26,6 +29,7 @@ export function num(v: unknown): number {
 const iso = (y: number, m: number, d: number) =>
   `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
+/** Acepta: serial de Excel, Date, "AAAA-MM-DD…" (lo que manda Apps Script) o "DD/MM/AAAA". */
 export function toISO(v: unknown): string | null {
   if (v == null || v === '') return null;
   if (typeof v === 'number') {
@@ -35,10 +39,11 @@ export function toISO(v: unknown): string | null {
   }
   if (v instanceof Date && !Number.isNaN(v.getTime())) return iso(v.getFullYear(), v.getMonth() + 1, v.getDate());
   const s = String(v).trim();
-  let m = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/);
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[0].slice(0, 10);
+  m = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/);
   if (m) { let y = +m[3]; if (y < 100) y += 2000; return iso(y, +m[2], +m[1]); }
-  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return m ? m[0].slice(0, 10) : null;
+  return null;
 }
 
 export function remitoKey(v: unknown): string | null {
@@ -67,11 +72,6 @@ export function unitOf(material: string | null): Unidad {
   return 'm3';
 }
 
-function rowsOf(wb: XLSX.WorkBook, name: string): Row[] | null {
-  const ws = wb.Sheets[name];
-  if (!ws) return null;
-  return XLSX.utils.sheet_to_json<Row>(ws, { header: 1, raw: true, defval: null, blankrows: false });
-}
 function findHeader(rows: Row[], req: string[]) {
   for (let i = 0; i < Math.min(rows.length, 15); i++) {
     const h = (rows[i] || []).map(hnorm);
@@ -85,17 +85,17 @@ function col(h: string[], name: string) {
 }
 
 interface Located { sheet: string; rows: Row[]; hi: number; h: string[] }
-/** Busca la hoja por nombre; si no está, prueba las demás por sus encabezados. */
-function locate(wb: XLSX.WorkBook, name: string, req: string[]): Located {
+/** Busca la hoja por nombre; si no está (o no tiene esas columnas), prueba las demás. */
+function locate(libro: Libro, name: string, req: string[]): Located {
   const tryOne = (n: string): Located | null => {
-    const rows = rowsOf(wb, n);
+    const rows = libro[n];
     if (!rows) return null;
     const hi = findHeader(rows, req);
     return hi < 0 ? null : { sheet: n, rows, hi, h: (rows[hi] || []).map(hnorm) };
   };
   const first = tryOne(name);
   if (first) return first;
-  for (const n of wb.SheetNames) {
+  for (const n of Object.keys(libro)) {
     if (n === name) continue;
     const r = tryOne(n);
     if (r) return r;
@@ -109,8 +109,8 @@ export interface RemitoRow {
   chofer: string | null; cantera: string | null; material: string | null; unidad: Unidad;
   cantidad: number; precio: number; total: number; neto: number; costo: number;
 }
-export function parsePrincipal(wb: XLSX.WorkBook): RemitoRow[] {
-  const L = locate(wb, 'PRINCIPAL', ['FECHA', 'REMITO', 'CHOFER', 'PRECIO VTA']);
+export function parsePrincipal(libro: Libro): RemitoRow[] {
+  const L = locate(libro, 'PRINCIPAL', ['FECHA', 'REMITO', 'CHOFER', 'PRECIO VTA']);
   const h = L.h;
   const c = {
     fecha: col(h, 'FECHA'), cliente: col(h, 'CLIENTE'), razon: col(h, 'RAZON SOCIAL'), remito: col(h, 'REMITO'),
@@ -139,8 +139,8 @@ export function parsePrincipal(wb: XLSX.WorkBook): RemitoRow[] {
 }
 
 export interface SaldoRow { nombre: string; ventas: number; cobranzas: number; saldo: number }
-export function parseCtaClientes(wb: XLSX.WorkBook): SaldoRow[] {
-  const L = locate(wb, 'Cta Clientes', ['RAZON SOCIAL', 'VENTAS TOTALES', 'SALDO']);
+export function parseCtaClientes(libro: Libro): SaldoRow[] {
+  const L = locate(libro, 'Cta Clientes', ['RAZON SOCIAL', 'VENTAS TOTALES', 'SALDO']);
   const h = L.h;
   const c = { n: col(h, 'RAZON SOCIAL'), v: col(h, 'VENTAS TOTALES'), co: col(h, 'COBRANZAS'), s: h.indexOf('SALDO') };
   const out: SaldoRow[] = [];
@@ -155,8 +155,8 @@ export function parseCtaClientes(wb: XLSX.WorkBook): SaldoRow[] {
 }
 
 // ───────────── NORMOV Diego 2026 ─────────────
-export function parseClientesDiego(wb: XLSX.WorkBook): SaldoRow[] {
-  const L = locate(wb, 'Clientes', ['CLIENTE', 'TOTAL FACTURADO', 'SALDO']);
+export function parseClientesDiego(libro: Libro): SaldoRow[] {
+  const L = locate(libro, 'Clientes', ['CLIENTE', 'TOTAL FACTURADO', 'SALDO']);
   const h = L.h;
   const c = { n: h.indexOf('CLIENTE'), f: col(h, 'TOTAL FACTURADO'), co: col(h, 'TOTAL COBRADO'), s: col(h, 'SALDO') };
   const out: SaldoRow[] = [];
@@ -174,8 +174,8 @@ export interface MovProvRow {
   fecha: string | null; proveedor: string; centro: string; unidad: string; subrubro: string; rubro: string;
   detalle: string; factura: string; debe: number; haber: number; forma: string; cheque: string; obs: string;
 }
-export function parseProveedores(wb: XLSX.WorkBook): MovProvRow[] {
-  const L = locate(wb, 'Cta Cte Proveedores', ['FECHA', 'PROVEEDOR', 'DEBE', 'HABER']);
+export function parseProveedores(libro: Libro): MovProvRow[] {
+  const L = locate(libro, 'Cta Cte Proveedores', ['FECHA', 'PROVEEDOR', 'DEBE', 'HABER']);
   const h = L.h;
   const c = {
     f: col(h, 'FECHA'), p: col(h, 'PROVEEDOR'), cen: col(h, 'CENTRO DE'), un: col(h, 'UNIDAD DE NEGOCIO'),
@@ -203,8 +203,8 @@ export interface ChequeRow {
   emision: string | null; tipo: string; contraparte: string; numero: string; banco: string; librador: string;
   monto: number; vto: string | null; estado: string; endosado: string; obs: string;
 }
-export function parseCheques(wb: XLSX.WorkBook): ChequeRow[] {
-  const L = locate(wb, 'Cheques', ['FECHA EMISION', 'MONTO', 'ESTADO']);
+export function parseCheques(libro: Libro): ChequeRow[] {
+  const L = locate(libro, 'Cheques', ['FECHA EMISION', 'MONTO', 'ESTADO']);
   const h = L.h;
   const c = {
     fe: col(h, 'FECHA EMISION'), tipo: col(h, 'TIPO'), cp: col(h, 'CLIENTE/PROVEEDOR'), nro: col(h, 'N° CHEQUE'),
@@ -238,8 +238,8 @@ export const isTruck = (p: string) => PLATE.test(up(p).replace(/[\s\-.]/g, ''));
 export interface CargaRow {
   fecha: string | null; remito: string; patente: string; litros: number; tipo: string; estacion: string; chofer: string; camion: boolean;
 }
-export function parseCombustible(wb: XLSX.WorkBook): CargaRow[] {
-  const L = locate(wb, 'Cargas', ['PATENTE', 'LITROS']);
+export function parseCombustible(libro: Libro): CargaRow[] {
+  const L = locate(libro, 'Cargas', ['PATENTE', 'LITROS']);
   const h = L.h;
   const c = {
     f: col(h, 'FECHA'), rem: col(h, 'REMITO'), pat: col(h, 'PATENTE'), lt: col(h, 'LITROS'),

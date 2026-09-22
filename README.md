@@ -4,10 +4,11 @@ Sistema paralelo e independiente del artifact "NOR MOV Tablero". Next.js (App Ro
 
 ## Estado (etapa 1: puente)
 
-Los administrativos siguen cargando en Google Sheets. Un script copia las planillas a Postgres y el tablero lee de la base.
+Los administrativos siguen cargando en Google Sheets. Un Apps Script instalado en cada planilla manda los datos solo
+a la base, cada 15-30 minutos, sin que nadie tenga que exportar ni tocar nada. `npm run import` queda como respaldo manual.
 
 ```
-Chofer → WhatsApp → Admin carga en Sheets → npm run import → Postgres → Tablero
+Chofer → WhatsApp → Admin carga en Sheets → Apps Script (automático) → /api/sync → Postgres → Tablero
 ```
 
 | Pieza | Estado |
@@ -22,7 +23,7 @@ Chofer → WhatsApp → Admin carga en Sheets → npm run import → Postgres �
 | Saldos de clientes y de proveedores, Cheques (con filtro de período opcional, por vencimiento) | funcionando (clientes y proveedores necesitan la planilla "Diego" importada) |
 | Certificados (armar, guardar, aprobar/anular, imprimir a PDF) | funcionando; el Excel queda pendiente |
 | Lectura de remitos desde foto | pendiente (etapa 2) |
-| Sync automático desde Google Sheets (sin exportar a mano) | pendiente |
+| Sync automático desde Google Sheets (`/api/sync` + Apps Script) | listo; **falta desplegar la app en algún lugar público e instalar el script en cada planilla** (ver abajo) |
 
 Typecheck y build (`npm run typecheck`, `npm run build`) pasan sin errores. El funcionamiento en el navegador lo vas probando vos: si algo no anda o se ve raro, avisá con el error o una captura.
 
@@ -44,13 +45,48 @@ Requisitos: Node 20.6 o superior y una cuenta de Supabase.
    ```sql
    update profiles set rol = 'admin' where email = 'tu@mail.com';
    ```
-7. **Importar datos:** en Google Drive, *Archivo → Descargar → .xlsx* de las tres planillas, guardalas en `data/` y corré:
+7. **Primera carga (manual, mientras no está el sync andando):** en Google Drive, *Archivo → Descargar → .xlsx* de las tres planillas, guardalas en `data/` y corré:
    ```bash
    npm run import -- --planilla data/planilla.xlsx --diego data/diego.xlsx --comb data/combustible.xlsx
    ```
-   Se puede repetir sin duplicar datos.
+   Se puede repetir sin duplicar datos. Sirve como respaldo aunque el sync automático ya esté funcionando.
+
+## Sync automático desde Google Sheets
+
+Una vez que esto está armado, nadie vuelve a exportar ni a tocar `npm run import` a mano: cada planilla se sincroniza sola.
+
+**1. Desplegar la app en algún lugar público.** El endpoint `/api/sync` tiene que tener una URL a la que Google pueda
+llegar por internet; `localhost` no sirve. Lo más simple es [Vercel](https://vercel.com) (gratis para este tamaño de
+proyecto): conectá el repositorio de GitHub y cargá ahí las mismas variables que tenés en `.env.local`
+(`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SYNC_SECRET`). Si querés,
+te ayudo con este paso cuando llegues.
+
+**2. Por cada una de las tres planillas** (Planilla NORMOV 2026, NORMOV Diego 2026, Planilla Combustible):
+
+> ⚠️ Si la planilla ya tiene un script instalado (por ejemplo el que hace que el artifact pueda escribir remitos,
+> cheques o pagos de vuelta en la hoja), **no lo borres ni lo reemplaces**. Es un mecanismo aparte, en el sentido
+> contrario (app → planilla en vez de planilla → app), y no comparte ningún nombre de función con lo de acá abajo:
+> conviven sin problema en el mismo proyecto de Apps Script.
+
+   1. Abrí la planilla → **Extensiones → Apps Script**.
+   2. Sin tocar los archivos que ya haya, creá uno nuevo (ícono `+` junto a "Archivos"). Apps Script agrega la
+      extensión `.gs` solo, así que al nombrarlo escribí **`comun`**, sin extensión (queda `comun.gs`). Pegá ahí
+      el contenido de `apps-script/_comun.gs.js` (de este proyecto).
+   3. Creá otro archivo nuevo, esta vez nombrándolo (también sin extensión) `sync-planilla`, `sync-diego` o
+      `sync-combustible` según la planilla, y pegá el contenido del `.gs.js` que corresponda.
+   4. **Configuración del proyecto** (ícono de engranaje) → **Propiedades del script** → agregá:
+      - `SYNC_URL` = `https://tu-dominio/api/sync` (la URL de Vercel del paso 1)
+      - `SYNC_SECRET` = el mismo valor que `SYNC_SECRET` en Vercel/`.env.local` (guardalo también en tu gestor de contraseñas: en Vercel, marcado como *Sensitive*, no se puede volver a ver)
+      - `AVISO_EMAIL` (opcional) = tu email, para que te avise si el sync falla
+   5. Seleccioná la función `sincronizar` en el desplegable de arriba y ejecutala una vez a mano (▶) para probarla y aceptar los permisos que pida Google.
+   6. **Activadores** (ícono del reloj) → **Agregar activador** → función `sincronizar`, origen del evento *Basado en tiempo*, cada 15 o 30 minutos. Esto no toca los activadores que ya tenga el script existente de esa planilla.
+
+Listo: desde ahí, los cambios en cada planilla llegan solos a la base, sin que nadie exporte nada.
 
 ## Supuestos y límites a tener en cuenta
+
+- **El endpoint `/api/sync` es la puerta de entrada desde afuera.** Solo acepta pedidos con el `SYNC_SECRET` correcto; guardalo como guardarías una contraseña (no lo subas a GitHub, ya está en `.gitignore` por estar en `.env.local`).
+- **Tamaño:** cada sync manda la hoja entera. Con el volumen actual de NORMOV no debería haber problema, pero si algún día una hoja crece mucho (varias decenas de miles de filas), puede llegar a chocar con el límite de tamaño de pedido de Vercel; en ese caso habría que mandar solo las filas nuevas en vez de la hoja completa.
 
 - **Remitos:** la clave es el número de remito. Los que no tienen número se omiten y se informan; si un número está repetido, gana la última fila.
 - **Borrados:** una fila que se borra de la planilla no se borra de la base (el importador solo agrega y actualiza).
@@ -64,9 +100,12 @@ Requisitos: Node 20.6 o superior y una cuenta de Supabase.
 ## Estructura
 
 ```
-supabase/migrations/   esquema, triggers, vistas y políticas RLS
-scripts/import-sheets.ts   importador (etapa puente)
-src/lib/sheets/parsers.ts  lectura de las planillas (portado del artifact)
-src/app/(app)/         pantallas protegidas
-src/middleware.ts      exige sesión en todo salvo /login
+supabase/migrations/       esquema, triggers, vistas y políticas RLS
+apps-script/                scripts a instalar en cada Google Sheet (sync automático)
+src/app/api/sync/route.ts   recibe el push del Apps Script y lo sube a la base
+scripts/import-sheets.ts    importador manual (.xlsx), respaldo de la etapa puente
+src/lib/sheets/parsers.ts   lectura de las hojas (filas → objetos)
+src/lib/sheets/importar.ts  las mismas subidas a Supabase, compartidas por el script y /api/sync
+src/app/(app)/               pantallas protegidas
+src/middleware.ts            exige sesión en todo salvo /login
 ```
