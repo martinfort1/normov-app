@@ -1,8 +1,9 @@
-import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { fetchAll } from '@/lib/fetch-all';
-import { periodoDe } from '@/lib/periodo';
+import { periodoDe, type PeriodoParams } from '@/lib/periodo';
 import { fecha, money, num1, num2, UNIDAD } from '@/lib/format';
+import { PeriodoSwitcher } from '@/components/periodo-switcher';
+import { Donut } from '@/components/donut';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,7 @@ interface Remito {
   materiales: { nombre: string; unidad: string } | null;
 }
 
-export default async function Operaciones({ searchParams }: { searchParams: Promise<{ mes?: string; anio?: string }> }) {
+export default async function Operaciones({ searchParams }: { searchParams: Promise<PeriodoParams> }) {
   const per = periodoDe(await searchParams);
   const supabase = await createClient();
 
@@ -54,12 +55,7 @@ export default async function Operaciones({ searchParams }: { searchParams: Prom
     <>
       <h1>Operaciones</h1>
       <p className="lede">Viajes de {per.etiqueta}, una fila por remito.</p>
-
-      <form className="filters" method="get">
-        <input type="month" name="mes" defaultValue={per.mes} aria-label="Mes" />
-        <button type="submit">Ver mes</button>
-        <Link className="btn" href={`/operaciones?anio=${per.anio}`}>Año {per.anio}</Link>
-      </form>
+      <PeriodoSwitcher per={per} />
 
       {error && <div className="banner err">{error}</div>}
 
@@ -72,24 +68,30 @@ export default async function Operaciones({ searchParams }: { searchParams: Prom
         <div className="kpi"><div className="l">Costo de material</div><div className="v">{money(costo)}</div></div>
       </div>
 
-      <div className="panel">
-        <h2 style={{ marginTop: 0 }}>Por cliente</h2>
-        <table>
-          <thead><tr><th>Razón social</th><th className="r">Viajes</th><th className="r">Cantidad</th><th className="r">Total</th><th /></tr></thead>
-          <tbody>
-            {clientes.map(([n, o]) => (
-              <tr key={n}>
-                <td>{n}</td><td className="r">{o.viajes}</td><td className="r">{num1(o.cantidad)}</td><td className="r">{money(o.total)}</td>
-                <td className="bar" style={{ minWidth: 90 }}><span style={{ width: `${(o.total / maxTotal) * 100}%` }} /></td>
-              </tr>
-            ))}
-            {!clientes.length && <tr><td colSpan={5} className="muted">Sin remitos en el período.</td></tr>}
-          </tbody>
-        </table>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%,460px),1fr))', gap: 16, alignItems: 'start' }}>
+        <div className="panel">
+          <h2 style={{ marginBottom: 12 }}>Por cliente</h2>
+          <Donut slices={clientes.map(([label, o]) => ({ label, value: o.total }))} fmt={money} centro="facturado" />
+        </div>
+        <div className="panel">
+          <h2 style={{ marginBottom: 12 }}>Detalle por cliente</h2>
+          <table>
+            <thead><tr><th>Razón social</th><th className="r">Viajes</th><th className="r">Cantidad</th><th className="r">Total</th><th /></tr></thead>
+            <tbody>
+              {clientes.map(([n, o]) => (
+                <tr key={n}>
+                  <td>{n}</td><td className="r">{o.viajes}</td><td className="r">{num1(o.cantidad)}</td><td className="r">{money(o.total)}</td>
+                  <td className="bar" style={{ minWidth: 90 }}><span style={{ width: `${(o.total / maxTotal) * 100}%` }} /></td>
+                </tr>
+              ))}
+              {!clientes.length && <tr><td colSpan={5} className="muted">Sin remitos en el período.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="panel">
-        <h2 style={{ marginTop: 0 }}>Remitos</h2>
+        <h2 style={{ marginBottom: 12 }}>Remitos</h2>
         <table>
           <thead>
             <tr><th>Fecha</th><th>Remito</th><th>Razón social</th><th>Obra</th><th>Material</th><th>Camión</th><th>Chofer</th>

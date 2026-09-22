@@ -1,14 +1,16 @@
 import { createClient } from '@/lib/supabase/server';
 import { fetchAll } from '@/lib/fetch-all';
-import { periodoDe } from '@/lib/periodo';
+import { periodoDe, type PeriodoParams } from '@/lib/periodo';
 import { fecha, money, num1 } from '@/lib/format';
+import { PeriodoSwitcher } from '@/components/periodo-switcher';
+import { Donut } from '@/components/donut';
 import { setPrecio } from './actions';
 
 export const dynamic = 'force-dynamic';
 
 interface Carga { fecha: string | null; patente: string; es_camion: boolean; litros: number; tipo: string; estacion: string; chofer: string }
 
-export default async function Combustible({ searchParams }: { searchParams: Promise<{ mes?: string; anio?: string }> }) {
+export default async function Combustible({ searchParams }: { searchParams: Promise<PeriodoParams> }) {
   const per = periodoDe(await searchParams);
   const supabase = await createClient();
 
@@ -44,11 +46,7 @@ export default async function Combustible({ searchParams }: { searchParams: Prom
     <>
       <h1>Combustible</h1>
       <p className="lede">Cargas de {per.etiqueta}, separadas en camiones (patente) y máquinas o equipos.</p>
-
-      <form className="filters" method="get">
-        <input type="month" name="mes" defaultValue={per.mes} aria-label="Mes" />
-        <button type="submit">Ver mes</button>
-      </form>
+      <PeriodoSwitcher per={per} />
 
       <form className="filters" action={guardarPrecio}>
         <label htmlFor="precio" className="muted" style={{ fontSize: 13 }}>Precio por litro ($)</label>
@@ -63,13 +61,18 @@ export default async function Combustible({ searchParams }: { searchParams: Prom
         <div className="kpi"><div className="l">Camiones</div><div className="v">{num1(litrosCamiones)}</div></div>
         <div className="kpi"><div className="l">Máquinas / equipos</div><div className="v">{num1(litrosMaquinas)}</div></div>
         <div className="kpi"><div className="l">Costo estimado</div><div className="v">{precio ? money(totalLitros * precio) : '—'}</div>
-          {!precio && <div className="muted" style={{ fontSize: 12 }}>Cargá el precio por litro arriba</div>}</div>
+          {!precio && <div className="s">Cargá el precio por litro arriba</div>}</div>
+      </div>
+
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <h2 style={{ marginBottom: 12 }}>Litros por patente</h2>
+        <Donut slices={[...porPatente.entries()].map(([label, o]) => ({ label, value: o.litros }))} fmt={num1} centro="litros" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%,460px),1fr))', gap: 16 }}>
         {[['Camiones', camiones], ['Máquinas y equipos', maquinas]].map(([titulo, lista]) => (
           <div className="panel" key={titulo as string}>
-            <h2 style={{ marginTop: 0 }}>{titulo as string}</h2>
+            <h2 style={{ marginBottom: 12 }}>{titulo as string}</h2>
             <table>
               <thead><tr><th>Patente</th><th className="r">Cargas</th><th className="r">Litros</th>{precio ? <th className="r">Costo</th> : null}</tr></thead>
               <tbody>
@@ -87,7 +90,7 @@ export default async function Combustible({ searchParams }: { searchParams: Prom
       </div>
 
       <div className="panel">
-        <h2 style={{ marginTop: 0 }}>Cargas del período</h2>
+        <h2 style={{ marginBottom: 12 }}>Cargas del período</h2>
         <table>
           <thead><tr><th>Fecha</th><th>Patente</th><th>Tipo</th><th>Estación</th><th>Chofer</th><th className="r">Litros</th></tr></thead>
           <tbody>

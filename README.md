@@ -12,23 +12,26 @@ Chofer → WhatsApp → Admin carga en Sheets → npm run import → Postgres �
 
 | Pieza | Estado |
 |---|---|
-| Esquema SQL (remitos, certificados, proveedores, cheques, combustible, roles, RLS, vistas) | listo, **sin ejecutar todavía** |
-| Importador de planillas (.xlsx) | listo, **sin probar con datos reales** |
-| Login con Google + roles | listo, sin probar |
-| Pantallas: Operaciones, Saldos proveedores, Cheques | listas, sin probar |
-| Saldos de clientes, Combustible | pendiente |
-| Certificados (armar, aprobar, PDF/Excel) | pendiente; la base ya garantiza que un remito no esté en dos certificados vigentes |
-| Lectura de remitos desde foto (Claude) | pendiente (etapa 2) |
+| Esquema SQL (remitos, certificados, proveedores, cheques, combustible, roles, RLS, vistas) | corrido en producción |
+| Función `crear_certificado` (0002, atómica) | **falta correr** si armaste tu proyecto antes de este cambio |
+| Importador de planillas (.xlsx) | probado con datos reales (planilla y combustible); falta la planilla "Diego" |
+| Login con email y contraseña | funcionando |
+| Login con Google | pendiente (necesita Client ID de Google Cloud) |
+| Operaciones (con selector Día/Mes/Año/Rango y torta por cliente) | funcionando |
+| Combustible (con período y torta por patente) | funcionando |
+| Saldos de clientes y de proveedores, Cheques | funcionando (clientes y proveedores necesitan la planilla "Diego" importada) |
+| Certificados (armar, guardar, aprobar/anular, imprimir a PDF) | funcionando; el Excel queda pendiente |
+| Lectura de remitos desde foto | pendiente (etapa 2) |
 | Sync automático desde Google Sheets (sin exportar a mano) | pendiente |
 
-Nada de esto se compiló ni se corrió: se escribió en una máquina sin Node. Esperá algún error de tipos o de SQL en la primera ejecución.
+Typecheck y build (`npm run typecheck`, `npm run build`) pasan sin errores. El funcionamiento en el navegador lo vas probando vos: si algo no anda o se ve raro, avisá con el error o una captura.
 
 ## Puesta en marcha
 
 Requisitos: Node 20.6 o superior y una cuenta de Supabase.
 
-1. **Proyecto Supabase:** crealo y copiá la URL, la `anon key` y la `service_role key` (Project Settings → API).
-2. **Base:** pegá `supabase/migrations/0001_schema.sql` en el SQL Editor y ejecutalo (requiere Postgres 15 o superior, el default de Supabase).
+1. **Proyecto Supabase:** crealo y copiá la URL, la `anon key` (o *publishable*) y la `service_role key` (o *secret*) desde Project Settings → API.
+2. **Base:** pegá y ejecutá en el SQL Editor, en este orden, `supabase/migrations/0001_schema.sql` y después `0002_certificados_rpc.sql` (requiere Postgres 15 o superior, el default de Supabase).
 3. **Primer usuario (email y contraseña):** en Supabase, Authentication → Users → *Add user* → *Create new user*. Ingresá email y contraseña y tildá *Auto Confirm User*.
    *Google (opcional, más adelante):* Authentication → Sign In / Providers → Google requiere un Client ID y Secret de Google Cloud. Al activarlo, poné `NEXT_PUBLIC_GOOGLE_LOGIN=1` en `.env.local` para que aparezca el botón.
 4. **Variables:** `cp .env.example .env.local` y completalo.
