@@ -10,7 +10,7 @@ import { filtrar } from '@/lib/filtrar';
 export const dynamic = 'force-dynamic';
 
 interface Remito {
-  numero: string; fecha: string; camion: string | null; chofer: string | null; cantera: string | null;
+  id: string; numero: string; fecha: string; camion: string | null; chofer: string | null; cantera: string | null;
   cantidad: number; precio: number; total: number; costo: number;
   clientes: { razon_social: string } | null;
   obras: { nombre: string } | null;
@@ -31,7 +31,7 @@ export default async function Operaciones({ searchParams }: { searchParams: Prom
     all = (await fetchAll((from, to) =>
       supabase
         .from('remitos')
-        .select('numero,fecha,camion,chofer,cantera,cantidad,precio,total,costo,clientes(razon_social),obras(nombre),materiales(nombre,unidad)')
+        .select('id,numero,fecha,camion,chofer,cantera,cantidad,precio,total,costo,clientes(razon_social),obras(nombre),materiales(nombre,unidad)')
         .gte('fecha', per.desde).lte('fecha', per.hasta)
         .order('fecha', { ascending: false }).order('numero', { ascending: false })
         .range(from, to),
@@ -120,7 +120,7 @@ export default async function Operaciones({ searchParams }: { searchParams: Prom
           </thead>
           <tbody>
             {rows.slice(0, 500).map((r) => (
-              <tr key={r.numero}>
+              <tr key={r.id}>
                 <td>{fecha(r.fecha)}</td><td>{r.numero}</td><td>{r.clientes?.razon_social ?? '—'}</td><td>{r.obras?.nombre ?? '—'}</td>
                 <td>{r.materiales?.nombre ?? '—'}</td><td>{r.camion ?? '—'}</td><td>{r.chofer ?? '—'}</td>
                 <td className="r">{num2(r.cantidad)}</td><td className="r">{money(r.precio)}</td><td className="r">{money(r.total)}</td>

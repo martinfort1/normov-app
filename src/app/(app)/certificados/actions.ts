@@ -35,8 +35,10 @@ export async function guardarCertificado(p: CrearCertificadoPayload): Promise<{ 
 
   if (error) {
     if (error.code === '23505') {
-      const m = error.message.match(/\(remito_numero\)=\(([^)]+)\)/);
-      return { error: `El remito ${m?.[1] ?? ''} ya está en otro certificado vigente. Quitalo y guardá de nuevo.`, numero: null };
+      // El índice es compuesto (remito_numero, fecha): el mismo número puede repetirse en otra fecha sin problema.
+      const m = error.message.match(/\(remito_numero, fecha\)=\(([^,]+), ([^)]+)\)/);
+      const detalle = m ? `El remito ${m[1]} del ${m[2]}` : 'Uno de estos remitos';
+      return { error: `${detalle} ya está en otro certificado vigente. Quitalo y guardá de nuevo.`, numero: null };
     }
     return { error: error.message, numero: null };
   }

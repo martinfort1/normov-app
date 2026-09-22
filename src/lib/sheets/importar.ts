@@ -37,9 +37,15 @@ async function idMap(db: SupabaseClient, table: string, keyCol: string, rows: Re
 export async function importarPlanilla(libro: Libro, db: SupabaseClient): Promise<string> {
   const rows = parsePrincipal(libro);
   const sinNumero = rows.filter((r) => !r.numero).length;
+  // La clave es (número, fecha): el número de remito se reutiliza con el tiempo, no es un ID global.
   const byNum = new Map<string, (typeof rows)[number]>();
   let duplicados = 0;
-  for (const r of rows) { if (!r.numero) continue; if (byNum.has(r.numero)) duplicados++; byNum.set(r.numero, r); } // gana la última fila
+  for (const r of rows) {
+    if (!r.numero) continue;
+    const k = `${r.numero}|${r.fecha}`;
+    if (byNum.has(k)) duplicados++;
+    byNum.set(k, r); // gana la última fila
+  }
   const uniq = [...byNum.values()];
 
   const razones = [...new Set(uniq.map((r) => r.razon).filter((x): x is string => !!x))];
@@ -71,12 +77,12 @@ export async function importarPlanilla(libro: Libro, db: SupabaseClient): Promis
       cantidad: r.cantidad, precio: r.precio, total: r.total, neto: r.neto, costo: r.costo, origen: 'planilla' as const,
     };
   });
-  for (const part of chunk(payload)) ok(await db.from('remitos').upsert(part, { onConflict: 'numero' }), 'remitos');
+  for (const part of chunk(payload)) ok(await db.from('remitos').upsert(part, { onConflict: 'numero,fecha' }), 'remitos');
 
   const saldos = parseCtaClientes(libro);
   await replaceSaldos(db, 'cta_clientes', saldos);
 
-  return `Remitos: ${payload.length} importados · ${sinNumero} sin número (omitidos) · ${duplicados} duplicados en la planilla. Saldos clientes (cta_clientes): ${saldos.length}.`;
+  return `Remitos: ${payload.length} importados · ${sinNumero} sin número (omitidos) · ${duplicados} repetidos (mismo número Y fecha) en la planilla. Saldos clientes (cta_clientes): ${saldos.length}.`;
 }
 
 async function replaceSaldos(db: SupabaseClient, fuente: string, saldos: { nombre: string; ventas: number; cobranzas: number; saldo: number }[]) {
