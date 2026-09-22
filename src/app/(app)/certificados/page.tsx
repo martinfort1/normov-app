@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { certNo, fecha, money, num2, UNIDAD } from '@/lib/format';
 import { ArmarCertificado } from './armar';
-import { setEstado } from './actions';
+import { EstadoBotones } from './estado-botones';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +23,6 @@ export default async function Certificados() {
   ]);
   const esAdmin = perfil?.rol === 'admin';
   const rows = (certs ?? []) as unknown as CertRow[];
-
-  async function accion(id: string, estado: 'pendiente' | 'aprobado' | 'anulado') {
-    'use server';
-    await setEstado(id, estado);
-  }
 
   return (
     <>
@@ -54,17 +49,11 @@ export default async function Certificados() {
                 <td className="r">{num2(c.cantidad)} {UNIDAD[c.unidad]}</td>
                 <td className="r">{money(c.total)}</td>
                 <td><span className={`pill ${ESTADO_PILL[c.estado]}`}>{c.estado}</span></td>
-                <td style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
-                  <Link href={`/certificados/${c.id}`}>Ver</Link>
-                  {c.estado === 'pendiente' && esAdmin && (
-                    <form action={accion.bind(null, c.id, 'aprobado')}><button type="submit">Aprobar</button></form>
-                  )}
-                  {c.estado === 'aprobado' && (
-                    <form action={accion.bind(null, c.id, 'pendiente')}><button type="submit">Revertir</button></form>
-                  )}
-                  {c.estado !== 'anulado' && (
-                    <form action={accion.bind(null, c.id, 'anulado')}><button type="submit" style={{ color: 'var(--bad)' }}>Anular</button></form>
-                  )}
+                <td>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <Link href={`/certificados/${c.id}`}>Ver</Link>
+                    <EstadoBotones id={c.id} estado={c.estado} esAdmin={esAdmin} />
+                  </div>
                 </td>
               </tr>
             ))}

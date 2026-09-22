@@ -4,7 +4,7 @@ import { periodoDe, type PeriodoParams } from '@/lib/periodo';
 import { fecha, money, num1 } from '@/lib/format';
 import { PeriodoSwitcher } from '@/components/periodo-switcher';
 import { Donut } from '@/components/donut';
-import { setPrecio } from './actions';
+import { PrecioForm } from './precio-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,22 +37,13 @@ export default async function Combustible({ searchParams }: { searchParams: Prom
   const litrosMaquinas = maquinas.reduce((a, [, o]) => a + o.litros, 0);
   const totalLitros = litrosCamiones + litrosMaquinas;
 
-  async function guardarPrecio(formData: FormData) {
-    'use server';
-    await setPrecio(formData);
-  }
-
   return (
     <>
       <h1>Combustible</h1>
       <p className="lede">Cargas de {per.etiqueta}, separadas en camiones (patente) y máquinas o equipos.</p>
       <PeriodoSwitcher per={per} />
 
-      <form className="filters" action={guardarPrecio}>
-        <label htmlFor="precio" className="muted" style={{ fontSize: 13 }}>Precio por litro ($)</label>
-        <input type="number" id="precio" name="precio" min="0" step="0.01" defaultValue={precio || ''} placeholder="Ej.: precio del surtidor" style={{ maxWidth: 160 }} />
-        <button type="submit">Guardar</button>
-      </form>
+      <PrecioForm precio={precio} />
 
       {cargasRes.error && <div className="banner err">{cargasRes.error}</div>}
 

@@ -17,9 +17,9 @@ Chofer → WhatsApp → Admin carga en Sheets → npm run import → Postgres �
 | Importador de planillas (.xlsx) | probado con datos reales (planilla y combustible); falta la planilla "Diego" |
 | Login con email y contraseña | funcionando |
 | Login con Google | pendiente (necesita Client ID de Google Cloud) |
-| Operaciones (con selector Día/Mes/Año/Rango y torta por cliente) | funcionando |
+| Operaciones (Día/Mes/Año/Rango, filtros por cliente/material/camión/chofer/cantera, torta por cliente) | funcionando |
 | Combustible (con período y torta por patente) | funcionando |
-| Saldos de clientes y de proveedores, Cheques | funcionando (clientes y proveedores necesitan la planilla "Diego" importada) |
+| Saldos de clientes y de proveedores, Cheques (con filtro de período opcional, por vencimiento) | funcionando (clientes y proveedores necesitan la planilla "Diego" importada) |
 | Certificados (armar, guardar, aprobar/anular, imprimir a PDF) | funcionando; el Excel queda pendiente |
 | Lectura de remitos desde foto | pendiente (etapa 2) |
 | Sync automático desde Google Sheets (sin exportar a mano) | pendiente |

@@ -4,6 +4,8 @@ import { periodoDe, type PeriodoParams } from '@/lib/periodo';
 import { fecha, money, num1, num2, UNIDAD } from '@/lib/format';
 import { PeriodoSwitcher } from '@/components/periodo-switcher';
 import { Donut } from '@/components/donut';
+import { FiltroMulti } from '@/components/filtro-multi';
+import { filtrar } from '@/lib/filtrar';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,15 +16,19 @@ interface Remito {
   obras: { nombre: string } | null;
   materiales: { nombre: string; unidad: string } | null;
 }
+type Params = PeriodoParams & { cliente?: string; material?: string; camion?: string; chofer?: string; cantera?: string };
 
-export default async function Operaciones({ searchParams }: { searchParams: Promise<PeriodoParams> }) {
-  const per = periodoDe(await searchParams);
+const uniq = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort();
+
+export default async function Operaciones({ searchParams }: { searchParams: Promise<Params> }) {
+  const sp = await searchParams;
+  const per = periodoDe(sp);
   const supabase = await createClient();
 
-  let rows: Remito[] = [];
+  let all: Remito[] = [];
   let error: string | null = null;
   try {
-    rows = (await fetchAll((from, to) =>
+    all = (await fetchAll((from, to) =>
       supabase
         .from('remitos')
         .select('numero,fecha,camion,chofer,cantera,cantidad,precio,total,costo,clientes(razon_social),obras(nombre),materiales(nombre,unidad)')
@@ -33,6 +39,12 @@ export default async function Operaciones({ searchParams }: { searchParams: Prom
   } catch (e) {
     error = e instanceof Error ? e.message : 'Error al consultar los remitos';
   }
+
+  const rows = filtrar(all, sp, {
+    cliente: (r) => r.clientes?.razon_social ?? null, material: (r) => r.materiales?.nombre ?? null,
+    camion: (r) => r.camion, chofer: (r) => r.chofer, cantera: (r) => r.cantera,
+  });
+  const hayFiltros = ['cliente', 'material', 'camion', 'chofer', 'cantera'].some((k) => sp[k as keyof Params]);
 
   const total = rows.reduce((a, r) => a + r.total, 0);
   const costo = rows.reduce((a, r) => a + r.costo, 0);
@@ -54,8 +66,17 @@ export default async function Operaciones({ searchParams }: { searchParams: Prom
   return (
     <>
       <h1>Operaciones</h1>
-      <p className="lede">Viajes de {per.etiqueta}, una fila por remito.</p>
+      <p className="lede">Viajes de {per.etiqueta}, una fila por remito. Los filtros se aplican a los indicadores, el gráfico y la tabla.</p>
       <PeriodoSwitcher per={per} />
+
+      <div className="filters">
+        <FiltroMulti name="cliente" label="Cliente" opciones={uniq(all.map((r) => r.clientes?.razon_social ?? null))} />
+        <FiltroMulti name="material" label="Material" opciones={uniq(all.map((r) => r.materiales?.nombre ?? null))} />
+        <FiltroMulti name="camion" label="Camión" opciones={uniq(all.map((r) => r.camion))} />
+        <FiltroMulti name="chofer" label="Chofer" opciones={uniq(all.map((r) => r.chofer))} />
+        <FiltroMulti name="cantera" label="Cantera" opciones={uniq(all.map((r) => r.cantera))} />
+        {hayFiltros && <a href="?" className="pill bad" style={{ textDecoration: 'none' }}>Quitar filtros</a>}
+      </div>
 
       {error && <div className="banner err">{error}</div>}
 
