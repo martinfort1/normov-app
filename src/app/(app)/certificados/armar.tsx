@@ -1,7 +1,7 @@
 'use client';
 import { useMemo, useState, useTransition } from 'react';
 import { buscarRemitos, guardarCertificado, type ItemPayload } from './actions';
-import { fecha, money, num2 } from '@/lib/format';
+import { fecha, money, num2, remito as fmtRemito } from '@/lib/format';
 import { hoyAR } from '@/lib/periodo';
 
 interface Cliente { id: string; razon_social: string }
@@ -17,6 +17,7 @@ export function ArmarCertificado({ clientes }: { clientes: Cliente[] }) {
   const [unidad, setUnidad] = useState<'m3' | 't' | 'h'>('m3');
   const [emision, setEmision] = useState(hoy);
   const [items, setItems] = useState<Item[]>([]);
+  const [incluirSinNumero, setIncluirSinNumero] = useState(false);
   const [manual, setManual] = useState({ fecha: hoy, remito: '', cantidad: '', precio: '' });
   const [msg, setMsg] = useState<{ tipo: 'good' | 'bad' | 'warn'; texto: string } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -30,7 +31,7 @@ export function ArmarCertificado({ clientes }: { clientes: Cliente[] }) {
     if (!clienteId) { setMsg({ tipo: 'warn', texto: 'Elegí un cliente primero.' }); return; }
     setMsg(null);
     startTransition(async () => {
-      const { rows, error } = await buscarRemitos(clienteId, desde, hasta);
+      const { rows, error } = await buscarRemitos(clienteId, desde, hasta, incluirSinNumero);
       if (error) { setMsg({ tipo: 'bad', texto: error }); return; }
       // El número de remito se reutiliza con el tiempo: la clave es (número, fecha).
       const have = new Set(items.map((i) => `${i.remito_numero}|${i.fecha}`));
@@ -101,7 +102,13 @@ export function ArmarCertificado({ clientes }: { clientes: Cliente[] }) {
 
         <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>
           <h3 style={{ fontSize: 13, textTransform: 'uppercase', margin: '0 0 8px' }}>A · Desde los remitos cargados</h3>
-          <button type="button" onClick={traerRemitos} disabled={pending}>{pending ? 'Buscando…' : 'Traer remitos'}</button>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button type="button" onClick={traerRemitos} disabled={pending}>{pending ? 'Buscando…' : 'Traer remitos'}</button>
+            <label className="row" style={{ gap: 6, fontSize: 13.5, cursor: 'pointer' }}>
+              <input type="checkbox" checked={incluirSinNumero} onChange={(e) => setIncluirSinNumero(e.target.checked)} style={{ minHeight: 'auto' }} />
+              Incluir viajes sin número de remito propio
+            </label>
+          </div>
         </div>
 
         <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>
@@ -123,7 +130,7 @@ export function ArmarCertificado({ clientes }: { clientes: Cliente[] }) {
         <tbody>
           {items.map((i) => (
             <tr key={i.key}>
-              <td>{fecha(i.fecha)}</td><td>{i.remito_numero} {i.origen === 'manual' && <span className="pill">manual</span>}</td>
+              <td>{fecha(i.fecha)}</td><td>{fmtRemito(i.remito_numero)} {i.origen === 'manual' && <span className="pill">manual</span>}</td>
               <td className="r"><input type="number" step="0.01" min="0" value={i.cantidad} onChange={(e) => editar(i.key, 'cantidad', e.target.value)} style={{ width: 90 }} /></td>
               <td className="r"><input type="number" step="0.01" min="0" value={i.precio} onChange={(e) => editar(i.key, 'precio', e.target.value)} style={{ width: 100 }} /></td>
               <td className="r">{money(i.total)}</td>

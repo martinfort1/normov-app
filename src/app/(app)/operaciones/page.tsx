@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { fetchAll } from '@/lib/fetch-all';
 import { periodoDe, type PeriodoParams } from '@/lib/periodo';
-import { fecha, money, num1, num2, UNIDAD } from '@/lib/format';
+import { fecha, money, num1, num2, remito, UNIDAD } from '@/lib/format';
 import { PeriodoSwitcher } from '@/components/periodo-switcher';
 import { Donut } from '@/components/donut';
 import { FiltroMulti } from '@/components/filtro-multi';
@@ -121,7 +121,7 @@ export default async function Operaciones({ searchParams }: { searchParams: Prom
           <tbody>
             {rows.slice(0, 500).map((r) => (
               <tr key={r.id}>
-                <td>{fecha(r.fecha)}</td><td>{r.numero}</td><td>{r.clientes?.razon_social ?? '—'}</td><td>{r.obras?.nombre ?? '—'}</td>
+                <td>{fecha(r.fecha)}</td><td>{remito(r.numero)}</td><td>{r.clientes?.razon_social ?? '—'}</td><td>{r.obras?.nombre ?? '—'}</td>
                 <td>{r.materiales?.nombre ?? '—'}</td><td>{r.camion ?? '—'}</td><td>{r.chofer ?? '—'}</td>
                 <td className="r">{num2(r.cantidad)}</td><td className="r">{money(r.precio)}</td><td className="r">{money(r.total)}</td>
               </tr>

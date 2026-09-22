@@ -6,14 +6,17 @@ export interface RemitoDisponible {
   remito_id: string; numero: string; fecha: string; cantidad: number; precio: number;
 }
 
-export async function buscarRemitos(clienteId: string, desde: string, hasta: string): Promise<{ rows: RemitoDisponible[]; error: string | null }> {
+export async function buscarRemitos(clienteId: string, desde: string, hasta: string, incluirSinNumero = false): Promise<{ rows: RemitoDisponible[]; error: string | null }> {
   if (!clienteId || !desde || !hasta) return { rows: [], error: 'Elegí cliente y fechas.' };
   const supabase = await createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from('v_remitos_estado')
     .select('id,numero,fecha,cantidad,precio')
-    .eq('cliente_id', clienteId).gte('fecha', desde).lte('fecha', hasta).is('cert_numero', null)
-    .order('fecha', { ascending: true }).limit(2000);
+    .eq('cliente_id', clienteId).gte('fecha', desde).lte('fecha', hasta).is('cert_numero', null);
+  // Los viajes sin número propio se guardan con una clave interna "SR-…" (ver lib/sheets/importar.ts);
+  // por defecto no se ofrecen para certificar, salvo que se pidan explícitamente.
+  if (!incluirSinNumero) query = query.not('numero', 'like', 'SR-%');
+  const { data, error } = await query.order('fecha', { ascending: true }).limit(2000);
   if (error) return { rows: [], error: error.message };
   return { rows: (data ?? []).map((r) => ({ remito_id: r.id, numero: r.numero, fecha: r.fecha, cantidad: r.cantidad, precio: r.precio })), error: null };
 }

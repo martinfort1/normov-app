@@ -38,13 +38,19 @@ export async function importarPlanilla(libro: Libro, db: SupabaseClient): Promis
   const rows = parsePrincipal(libro);
   const sinNumero = rows.filter((r) => !r.numero).length;
   // La clave es (número, fecha): el número de remito se reutiliza con el tiempo, no es un ID global.
+  // Los viajes sin número (chofer no lo cargó, obra sin remito, etc.) igual se guardan: se les arma
+  // un identificador estable a partir de sus propios datos ("SR-…"), para que no se pierdan ni se
+  // dupliquen en cada sync. Se muestran como "(sin número)" en la interfaz (ver lib/format.ts) y no
+  // entran como candidatos a certificar, porque un certificado necesita un número real que el cliente
+  // pueda chequear contra su remito en papel.
+  const generarSR = hasher();
   const byNum = new Map<string, (typeof rows)[number]>();
   let duplicados = 0;
   for (const r of rows) {
-    if (!r.numero) continue;
-    const k = `${r.numero}|${r.fecha}`;
+    const numero = r.numero ?? 'SR-' + generarSR([r.fecha, r.cliente, r.razon, r.material, r.cantidad, r.precio, r.camion, r.chofer, r.cantera]).slice(0, 12);
+    const k = `${numero}|${r.fecha}`;
     if (byNum.has(k)) duplicados++;
-    byNum.set(k, r); // gana la última fila
+    byNum.set(k, { ...r, numero }); // gana la última fila
   }
   const uniq = [...byNum.values()];
 
@@ -82,7 +88,7 @@ export async function importarPlanilla(libro: Libro, db: SupabaseClient): Promis
   const saldos = parseCtaClientes(libro);
   await replaceSaldos(db, 'cta_clientes', saldos);
 
-  return `Remitos: ${payload.length} importados · ${sinNumero} sin número (omitidos) · ${duplicados} repetidos (mismo número Y fecha) en la planilla. Saldos clientes (cta_clientes): ${saldos.length}.`;
+  return `Remitos: ${payload.length} importados (${sinNumero} sin número propio, guardados igual) · ${duplicados} repetidos (mismo número Y fecha) en la planilla. Saldos clientes (cta_clientes): ${saldos.length}.`;
 }
 
 async function replaceSaldos(db: SupabaseClient, fuente: string, saldos: { nombre: string; ventas: number; cobranzas: number; saldo: number }[]) {

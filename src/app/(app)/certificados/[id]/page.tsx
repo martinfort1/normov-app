@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { certNo, fecha, money, num2, UNIDAD } from '@/lib/format';
+import { certNo, fecha, money, num2, remito, UNIDAD } from '@/lib/format';
 import { PrintButton } from './print-button';
 
 export const dynamic = 'force-dynamic';
@@ -49,7 +49,7 @@ export default async function VerCertificado({ params }: { params: Promise<{ id:
           <thead><tr><th>Fecha</th><th>N° remito</th><th className="r">Cantidad</th><th className="r">Precio unitario</th><th className="r">Total</th></tr></thead>
           <tbody>
             {items.map((i) => (
-              <tr key={i.id}><td>{fecha(i.fecha)}</td><td>{i.remito_numero}</td><td className="r">{num2(i.cantidad)}</td><td className="r">{money(i.precio)}</td><td className="r">{money(i.total)}</td></tr>
+              <tr key={i.id}><td>{fecha(i.fecha)}</td><td>{remito(i.remito_numero)}</td><td className="r">{num2(i.cantidad)}</td><td className="r">{money(i.precio)}</td><td className="r">{money(i.total)}</td></tr>
             ))}
             <tr style={{ fontWeight: 700, borderTop: '2px solid var(--ink)' }}><td colSpan={2}>{items.length} remitos</td><td className="r">{num2(cant)}</td><td /><td className="r">{money(total)}</td></tr>
           </tbody>

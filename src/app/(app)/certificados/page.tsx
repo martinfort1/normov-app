@@ -29,7 +29,8 @@ export default async function Certificados() {
       <h1>Certificados</h1>
       <p className="lede">
         Armá el certificado y mandalo a aprobación. Los remitos de certificados pendientes o aprobados no se pueden
-        volver a certificar; la base lo garantiza aunque dos personas trabajen al mismo tiempo.
+        volver a certificar; la base lo garantiza aunque dos personas trabajen al mismo tiempo. Los viajes sin número
+        de remito propio se cuentan igual en Operaciones; para certificarlos, tildá la opción al lado de "Traer remitos".
       </p>
 
       <ArmarCertificado clientes={clientes ?? []} />
