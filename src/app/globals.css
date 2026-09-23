@@ -72,6 +72,15 @@ h3 { font-family: var(--display); font-weight: 600; font-size: 15px; text-transf
 .lede { color: var(--ink-2); margin: 0 0 16px; max-width: 70ch; font-size: 14px; }
 
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; overflow-x: auto; box-shadow: var(--shadow); }
+.panel-h { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; margin-bottom: 10px; }
+.empty { padding: 18px; text-align: center; color: var(--muted); font-size: 14px; }
+details summary { cursor: pointer; color: var(--bronze-ink); font-size: 13px; margin-top: 6px; }
+.chip { border: 1px solid var(--bronze); background: transparent; color: var(--bronze-ink); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 34px; text-decoration: none; display: inline-flex; align-items: center; }
+.chip[aria-pressed='true'] { background: var(--bronze); color: #1a1a1a; }
+.lg { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); }
+.lg i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.chart svg { width: 100%; height: auto; display: block; }
+.note { font-size: 13px; color: var(--ink-2); margin: 0 0 4px; }
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow); }
 .kpi .l { font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
@@ -108,9 +117,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 /* selector de período (Día · Mes · Año · Rango) */
 .periodo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.seg button { border: 0; border-radius: 0; background: var(--surface); min-height: 32px; padding: 5px 12px; font-size: 13.5px; }
-.seg button:hover { border-color: transparent; }
-.seg button[aria-pressed='true'] { background: var(--ink); color: var(--ground); }
+.seg button, .seg a { border: 0; border-radius: 0; background: var(--surface); min-height: 32px; padding: 5px 12px; font-size: 13.5px; text-decoration: none; display: inline-flex; align-items: center; }
+.seg button:hover, .seg a:hover { border-color: transparent; }
+.seg button[aria-pressed='true'], .seg a[aria-pressed='true'] { background: var(--ink); color: var(--ground); }
 
 /* filtro de selección múltiple */
 .ms { position: relative; display: inline-block; }

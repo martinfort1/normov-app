@@ -1,4 +1,4 @@
-const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+export const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 export type Modo = 'dia' | 'mes' | 'anio' | 'rango';
 export interface Periodo {
@@ -44,3 +44,18 @@ export function periodoDe(sp: PeriodoParams): Periodo {
 }
 
 function fmt(iso: string) { return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`; }
+
+export function addDays(desde: string, n: number): string {
+  const d = new Date(desde + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toLocaleDateString('en-CA');
+}
+
+/**
+ * El rango a pedirle a la base para poder dibujar los gráficos: en modo "día" se necesitan
+ * los últimos 14 días aunque el período elegido sea uno solo; en el resto alcanza con el período.
+ */
+export function rangoGrafico(per: Periodo): { desde: string; hasta: string } {
+  if (per.modo === 'dia') return { desde: addDays(per.dia, -13), hasta: per.dia };
+  return { desde: per.desde, hasta: per.hasta };
+}
