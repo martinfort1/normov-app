@@ -156,9 +156,12 @@ export function parseCtaClientes(libro: Libro): SaldoRow[] {
 
 // ───────────── NORMOV Diego 2026 ─────────────
 export function parseClientesDiego(libro: Libro): SaldoRow[] {
-  const L = locate(libro, 'Clientes', ['CLIENTE', 'TOTAL FACTURADO', 'SALDO']);
+  // Se identifica la hoja por sus columnas de importes. El encabezado de la columna de nombres puede
+  // estar mal escrito o cambiar ("no", "Cliente / Obra"…): si no dice CLIENTE, es la primera columna con título.
+  const L = locate(libro, 'Clientes', ['TOTAL FACTURADO', 'SALDO']);
   const h = L.h;
-  const c = { n: h.indexOf('CLIENTE'), f: col(h, 'TOTAL FACTURADO'), co: col(h, 'TOTAL COBRADO'), s: col(h, 'SALDO') };
+  const nombreCol = h.indexOf('CLIENTE') >= 0 ? h.indexOf('CLIENTE') : h.findIndex((x) => x !== '');
+  const c = { n: nombreCol, f: col(h, 'TOTAL FACTURADO'), co: col(h, 'TOTAL COBRADO'), s: col(h, 'SALDO') };
   const out: SaldoRow[] = [];
   for (let i = L.hi + 1; i < L.rows.length; i++) {
     const r = L.rows[i];

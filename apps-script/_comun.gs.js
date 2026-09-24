@@ -59,11 +59,20 @@ function enviar_(archivo, sheets) {
   Logger.log('[' + archivo + '] ' + texto);
 }
 
-/** Si falla, un mail simple. Poné tu email en Propiedades del script como AVISO_EMAIL (opcional). */
+/** Si falla, un mail simple. Poné tu email en Propiedades del script como AVISO_EMAIL (opcional).
+ *  El mismo error se avisa una sola vez por día, para que un problema que dura horas no llene la casilla. */
 function avisarError_(archivo, detalle) {
   try {
-    const email = PropertiesService.getScriptProperties().getProperty('AVISO_EMAIL');
+    const props = PropertiesService.getScriptProperties();
+    const email = props.getProperty('AVISO_EMAIL');
     if (!email) return;
+
+    const clave = 'ULTIMO_AVISO_' + archivo;
+    const hoy = Utilities.formatDate(new Date(), 'America/Argentina/Tucuman', 'yyyy-MM-dd');
+    const marca = hoy + '|' + String(detalle).slice(0, 200);
+    if (props.getProperty(clave) === marca) return; // mismo error, mismo día: ya se avisó
+    props.setProperty(clave, marca);
+
     MailApp.sendEmail(email, 'NORMOV: falló el sync de ' + archivo, 'Detalle:\n\n' + detalle);
   } catch (e) {
     Logger.log('No se pudo avisar por mail: ' + e);

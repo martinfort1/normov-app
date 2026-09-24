@@ -98,31 +98,50 @@ async function replaceSaldos(db: SupabaseClient, fuente: string, saldos: { nombr
     ok(await db.from('saldos_clientes_planilla').insert(part), 'saldos');
 }
 
+/** Cada hoja de Diego se importa por separado: si una falla, las otras igual se actualizan.
+ *  Si algo falló, al final se avisa con un error que dice qué hoja (así queda registrado en Sistema). */
 export async function importarDiego(libro: Libro, db: SupabaseClient): Promise<string> {
-  const saldos = parseClientesDiego(libro);
-  await replaceSaldos(db, 'clientes_diego', saldos);
+  const partes: string[] = [];
+  const fallas: string[] = [];
+  const correr = async (nombre: string, fn: () => Promise<string>) => {
+    try { partes.push(await fn()); }
+    catch (e) { fallas.push(`${nombre}: ${e instanceof Error ? e.message : String(e)}`); }
+  };
 
-  const movs = parseProveedores(libro);
-  const provs = await idMap(db, 'proveedores', 'nombre', [...new Set(movs.map((m) => m.proveedor))].map((nombre) => ({ nombre })), 'nombre');
-  const hash = hasher();
-  const movPayload = movs.map((m) => ({
-    proveedor_id: provs.get(m.proveedor)!, fecha: m.fecha, centro_costo: m.centro || null, unidad_negocio: m.unidad || null,
-    rubro: m.rubro || null, subrubro: m.subrubro || null, detalle: m.detalle || null, nro_factura: m.factura || null,
-    debe: m.debe, haber: m.haber, forma_pago: m.forma || null, nro_cheque: m.cheque || null, observaciones: m.obs || null,
-    source_hash: hash([m.fecha, m.proveedor, m.detalle, m.factura, m.debe, m.haber, m.forma, m.cheque]),
-  }));
-  for (const part of chunk(movPayload)) ok(await db.from('movimientos_proveedor').upsert(part, { onConflict: 'source_hash' }), 'movimientos');
+  await correr('Saldos de clientes', async () => {
+    const saldos = parseClientesDiego(libro);
+    await replaceSaldos(db, 'clientes_diego', saldos);
+    return `Saldos clientes (clientes_diego): ${saldos.length}.`;
+  });
 
-  const chq = parseCheques(libro);
-  const hc = hasher();
-  const chqPayload = chq.map((c) => ({
-    tipo: c.tipo, contraparte: c.contraparte || null, numero: c.numero || null, banco: c.banco || null, librador: c.librador || null,
-    monto: c.monto, emision: c.emision, vencimiento: c.vto, estado: c.estado, endosado_a: c.endosado || null, observaciones: c.obs || null,
-    source_hash: hc([c.tipo, c.numero, c.banco, c.monto, c.vto, c.contraparte]), // el estado cambia: no entra en el hash
-  }));
-  for (const part of chunk(chqPayload)) ok(await db.from('cheques').upsert(part, { onConflict: 'source_hash' }), 'cheques');
+  await correr('Proveedores', async () => {
+    const movs = parseProveedores(libro);
+    const provs = await idMap(db, 'proveedores', 'nombre', [...new Set(movs.map((m) => m.proveedor))].map((nombre) => ({ nombre })), 'nombre');
+    const hash = hasher();
+    const movPayload = movs.map((m) => ({
+      proveedor_id: provs.get(m.proveedor)!, fecha: m.fecha, centro_costo: m.centro || null, unidad_negocio: m.unidad || null,
+      rubro: m.rubro || null, subrubro: m.subrubro || null, detalle: m.detalle || null, nro_factura: m.factura || null,
+      debe: m.debe, haber: m.haber, forma_pago: m.forma || null, nro_cheque: m.cheque || null, observaciones: m.obs || null,
+      source_hash: hash([m.fecha, m.proveedor, m.detalle, m.factura, m.debe, m.haber, m.forma, m.cheque]),
+    }));
+    for (const part of chunk(movPayload)) ok(await db.from('movimientos_proveedor').upsert(part, { onConflict: 'source_hash' }), 'movimientos');
+    return `Movimientos de proveedores: ${movPayload.length}.`;
+  });
 
-  return `Saldos clientes (clientes_diego): ${saldos.length}. Movimientos de proveedores: ${movPayload.length}. Cheques: ${chqPayload.length}.`;
+  await correr('Cheques', async () => {
+    const chq = parseCheques(libro);
+    const hc = hasher();
+    const chqPayload = chq.map((c) => ({
+      tipo: c.tipo, contraparte: c.contraparte || null, numero: c.numero || null, banco: c.banco || null, librador: c.librador || null,
+      monto: c.monto, emision: c.emision, vencimiento: c.vto, estado: c.estado, endosado_a: c.endosado || null, observaciones: c.obs || null,
+      source_hash: hc([c.tipo, c.numero, c.banco, c.monto, c.vto, c.contraparte]), // el estado cambia: no entra en el hash
+    }));
+    for (const part of chunk(chqPayload)) ok(await db.from('cheques').upsert(part, { onConflict: 'source_hash' }), 'cheques');
+    return `Cheques: ${chqPayload.length}.`;
+  });
+
+  if (fallas.length) throw new Error(`${fallas.join(' | ')}${partes.length ? ` (lo demás se importó: ${partes.join(' ')})` : ''}`);
+  return partes.join(' ');
 }
 
 export async function importarCombustible(libro: Libro, db: SupabaseClient): Promise<string> {
