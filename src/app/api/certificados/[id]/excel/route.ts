@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { createClient } from '@/lib/supabase/server';
 import { certNo, fecha, remito } from '@/lib/format';
+import { getAcceso } from '@/lib/permisos';
 
 interface Item { remito_numero: string; fecha: string; cantidad: number; precio: number; total: number }
 interface Cert {
@@ -12,6 +13,8 @@ interface Cert {
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const acceso = await getAcceso();
+  if (!acceso?.puedeVer('certificados')) return NextResponse.json({ error: 'No tenés acceso a Certificados.' }, { status: 403 });
   const { id } = await params;
   const supabase = await createClient();
   const { data, error } = await supabase

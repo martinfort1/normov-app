@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { haceTiempo } from '@/lib/format';
+import { getAcceso } from '@/lib/permisos';
+import { SinAcceso } from '@/components/sin-acceso';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +12,8 @@ const ARCHIVOS = ['planilla', 'diego', 'comb'];
 const ATRASO_MIN = 90; // el disparador corre cada 15-30 min: si pasó más que esto, algo dejó de andar
 
 export default async function Sistema() {
+  const acceso = await getAcceso();
+  if (!acceso?.puedeVer('sistema')) return <SinAcceso seccion="Sistema" />;
   const supabase = await createClient();
   const { data, error } = await supabase.from('sync_log').select('*').order('creado', { ascending: false }).limit(200);
   const rows = (data ?? []) as LogRow[];

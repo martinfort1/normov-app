@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { certNo, fecha, money, num2, UNIDAD } from '@/lib/format';
+import { getAcceso } from '@/lib/permisos';
+import { SinAcceso } from '@/components/sin-acceso';
 import { ArmarCertificado } from './armar';
 import { EstadoBotones } from './estado-botones';
 
@@ -15,25 +17,31 @@ interface CertRow {
 const ESTADO_PILL: Record<string, string> = { pendiente: 'warn', aprobado: 'good', anulado: 'bad' };
 
 export default async function Certificados() {
+  const acceso = await getAcceso();
+  if (!acceso?.puedeVer('certificados')) return <SinAcceso seccion="Certificados" />;
+  const puedeCargar = acceso.puedeEscribir('certificados');
+  const esAdmin = acceso.esAdmin;
+
   const supabase = await createClient();
-  const [{ data: clientes }, { data: certs, error }, { data: perfil }] = await Promise.all([
+  const [{ data: clientes }, { data: certs, error }] = await Promise.all([
     supabase.from('clientes').select('id,razon_social').eq('activo', true).order('razon_social'),
     supabase.from('certificados').select('id,numero,desde,hasta,emision,unidad,estado,cantidad,total,clientes(razon_social)').order('numero', { ascending: false }).limit(300),
-    supabase.from('profiles').select('rol').single(),
   ]);
-  const esAdmin = perfil?.rol === 'admin';
   const rows = (certs ?? []) as unknown as CertRow[];
 
   return (
     <>
       <h1>Certificados</h1>
       <p className="lede">
-        Armá el certificado y mandalo a aprobación. Los remitos de certificados pendientes o aprobados no se pueden
-        volver a certificar; la base lo garantiza aunque dos personas trabajen al mismo tiempo. Los viajes sin número
-        de remito propio se cuentan igual en Operaciones; para certificarlos, tildá la opción al lado de "Traer remitos".
+        {puedeCargar
+          ? 'Armá el certificado y mandalo a aprobación. '
+          : 'Certificados guardados. Tu usuario puede verlos, no armarlos. '}
+        Los remitos de certificados pendientes o aprobados no se pueden volver a certificar; la base lo garantiza aunque
+        dos personas trabajen al mismo tiempo. Los viajes sin número de remito propio se cuentan igual en Operaciones;
+        para certificarlos, tildá la opción al lado de &quot;Traer remitos&quot;.
       </p>
 
-      <ArmarCertificado clientes={clientes ?? []} />
+      {puedeCargar && <ArmarCertificado clientes={clientes ?? []} />}
 
       <div className="panel">
         <h2 style={{ marginTop: 0 }}>Certificados guardados</h2>
@@ -53,7 +61,7 @@ export default async function Certificados() {
                 <td>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <Link href={`/certificados/${c.id}`}>Ver</Link>
-                    <EstadoBotones id={c.id} estado={c.estado} esAdmin={esAdmin} />
+                    {puedeCargar && <EstadoBotones id={c.id} estado={c.estado} esAdmin={esAdmin} />}
                   </div>
                 </td>
               </tr>
@@ -61,7 +69,7 @@ export default async function Certificados() {
             {!rows.length && <tr><td colSpan={8} className="muted">Todavía no hay certificados guardados.</td></tr>}
           </tbody>
         </table>
-        {!esAdmin && <p className="muted">Solo un administrador puede aprobar certificados.</p>}
+        {puedeCargar && !esAdmin && <p className="muted">Solo un administrador puede aprobar certificados.</p>}
       </div>
     </>
   );

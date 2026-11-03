@@ -15,7 +15,8 @@ Chofer → WhatsApp → Admin carga en Sheets → Apps Script (automático) → 
 |---|---|
 | Esquema SQL (remitos, certificados, proveedores, cheques, combustible, roles, RLS, vistas) | corrido en producción |
 | Migraciones 0002 (certificados atómicos), 0003 (clave de remito por fecha) | corridas en producción |
-| Migración 0004 (`sync_log`, pantalla Sistema) | **nueva — falta correr** |
+| Migración 0004 (`sync_log`, pantalla Sistema) | corrida |
+| Migración 0005 (permisos por usuario y por sección, pantalla Usuarios) | **nueva — falta correr** (la app sigue andando sin ella, con los permisos de antes) |
 | Importador de planillas (.xlsx) | respaldo manual; el sync automático ya cubre las tres planillas |
 | Login con email y contraseña | funcionando, en producción (Vercel) |
 | Login con Google | pendiente (necesita Client ID de Google Cloud) |
@@ -23,11 +24,22 @@ Chofer → WhatsApp → Admin carga en Sheets → Apps Script (automático) → 
 | Combustible (con período y torta por patente) | funcionando |
 | Saldos de clientes y de proveedores, Cheques (con filtro de período opcional, por vencimiento) | funcionando |
 | Certificados (armar, guardar, aprobar/anular, imprimir a PDF, exportar Excel) | funcionando |
-| Pantalla "Sistema" (estado del sync, historial) | nueva — necesita la migración 0004 |
+| Pantalla "Sistema" (estado del sync, historial) | funcionando |
+| Pantalla "Usuarios" (crear cuentas, permisos por sección) | nueva — necesita la migración 0005 |
 | Lectura de remitos desde foto | pendiente (etapa 2) |
 | Sync automático desde Google Sheets (`/api/sync` + Apps Script) | **en producción**, con activadores cada 15-30 min en las tres planillas |
 
 Typecheck y build (`npm run typecheck`, `npm run build`) pasan sin errores. El funcionamiento en el navegador lo vas probando vos: si algo no anda o se ve raro, avisá con el error o una captura.
+
+## Hacia el reemplazo de las planillas
+
+Hoy las planillas siguen siendo la fuente de verdad y la app las lee. La meta es la inversa: que se cargue todo
+en la app, con cada persona viendo y cargando solo lo suyo, y que las planillas queden como archivo. En orden:
+
+1. **Permisos por usuario y sección** — hecho (migración 0005, pantalla Usuarios).
+2. **Carga directa a la base**, cada formulario protegido por el permiso de su sección: viaje, combustible, movimiento de proveedor, cobro / certificación de cliente, cheque (alta y cambio de estado), caja diaria, y poder anular lo cargado por error. Es lo que hoy hace la pestaña "Cargar" del tablero de FRAN, pero escribiendo en la base en vez de en Drive.
+3. **Lo que hoy solo existe en las planillas**: cuenta corriente de clientes con imputación de cobros (para "certificado sin cobrar / cobrado" y "viajes sin certificar"), caja diaria con saldos por cuenta, y cash flow proyectado.
+4. **Corte**: cuando una sección ya se carga en la app, se apaga el sync de esa planilla (si no, el sync pisaría las correcciones hechas en la app con lo que dice la planilla). Antes del corte conviene un respaldo completo en Excel.
 
 ## Puesta en marcha
 
@@ -95,7 +107,8 @@ Listo: desde ahí, los cambios en cada planilla llegan solos a la base, sin que 
 - **Cheques y movimientos:** se identifican por un hash del contenido. Si se corrige en la planilla un importe o una fecha, el importador lo ve como una fila nueva y deja la anterior. Los cambios de *estado* de un cheque sí se actualizan, porque el estado no entra en el hash. Es una limitación de la etapa puente que desaparece cuando la carga pase a la app.
 - **Semáforo de cheques:** "por vencer" = 7 días. Es una suposición mía; no la copié del artifact.
 - **Saldos de clientes:** por ahora se guardan tal como los calculan las planillas (`saldos_clientes_planilla`).
-- **Roles:** `lector` ve; `operador` ve y escribe; `admin` además aprueba certificados y promueve usuarios. Todo usuario nuevo entra sin acceso.
+- **Permisos:** cada usuario tiene un nivel por sección (Viajes, Combustible, Certificados, Saldos de clientes, Saldos de proveedores, Cheques, Sistema): *sin acceso*, *solo ver* o *ver y cargar*. El rol `admin` accede a todo, es el único que aprueba certificados y gestiona usuarios (pantalla Usuarios). `sin_acceso` es una cuenta pendiente o desactivada. Los permisos los hace cumplir la base de datos (RLS, migración 0005), no solo las pantallas; la pantalla además oculta lo que no corresponde. Armar un certificado necesita *ver y cargar* en Certificados y *ver* en Viajes (los remitos salen de ahí).
+- **Pruebas de la base:** `cd supabase/tests && npm install && npm test` corre todas las migraciones sobre un Postgres en memoria (PGlite) y comprueba que cada tipo de usuario vea y cambie solo lo que debe. No toca ninguna base real. Conviene correrlas antes de aplicar una migración nueva.
 - **Numeración de certificados:** es una secuencia de la base. Si ya emitiste certificados con el artifact, ajustá el arranque, por ejemplo `alter table certificados alter column numero restart with 120;`.
 - `xlsx` (SheetJS 0.18) se usa solo en el script local con archivos propios. No lo uses para leer archivos de terceros.
 

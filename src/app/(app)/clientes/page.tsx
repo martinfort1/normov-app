@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { money } from '@/lib/format';
+import { getAcceso } from '@/lib/permisos';
+import { SinAcceso } from '@/components/sin-acceso';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +41,8 @@ function Cuenta({ titulo, rows, error }: { titulo: string; rows: Saldo[]; error:
 }
 
 export default async function Clientes({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const acceso = await getAcceso();
+  if (!acceso?.puedeVer('clientes')) return <SinAcceso seccion="Saldos de clientes" />;
   const { q } = await searchParams;
   const [cta, diego] = await Promise.all([tabla('cta_clientes', q), tabla('clientes_diego', q)]);
 

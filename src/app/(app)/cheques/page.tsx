@@ -3,6 +3,8 @@ import { fecha, money } from '@/lib/format';
 import { periodoDe, type PeriodoParams } from '@/lib/periodo';
 import { PeriodoSwitcher } from '@/components/periodo-switcher';
 import { TogglePeriodo } from '@/components/toggle-periodo';
+import { getAcceso } from '@/lib/permisos';
+import { SinAcceso } from '@/components/sin-acceso';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +18,8 @@ const SEM: Record<string, [string, string]> = {
 };
 
 export default async function Cheques({ searchParams }: { searchParams: Promise<PeriodoParams & { conPeriodo?: string }> }) {
+  const acceso = await getAcceso();
+  if (!acceso?.puedeVer('cheques')) return <SinAcceso seccion="Cheques" />;
   const sp = await searchParams;
   const conPeriodo = sp.conPeriodo === '1';
   const per = periodoDe(sp);

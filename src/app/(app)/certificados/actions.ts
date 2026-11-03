@@ -1,12 +1,17 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { getAcceso } from '@/lib/permisos';
+
+const SIN_PERMISO = 'No tenés permiso para cargar en Certificados.';
 
 export interface RemitoDisponible {
   remito_id: string; numero: string; fecha: string; cantidad: number; precio: number;
 }
 
 export async function buscarRemitos(clienteId: string, desde: string, hasta: string, incluirSinNumero = false): Promise<{ rows: RemitoDisponible[]; error: string | null }> {
+  const acceso = await getAcceso();
+  if (!acceso?.puedeEscribir('certificados')) return { rows: [], error: SIN_PERMISO };
   if (!clienteId || !desde || !hasta) return { rows: [], error: 'Elegí cliente y fechas.' };
   const supabase = await createClient();
   let query = supabase
@@ -29,6 +34,8 @@ export interface CrearCertificadoPayload {
 }
 
 export async function guardarCertificado(p: CrearCertificadoPayload): Promise<{ error: string | null; numero: number | null }> {
+  const acceso = await getAcceso();
+  if (!acceso?.puedeEscribir('certificados')) return { error: SIN_PERMISO, numero: null };
   if (!p.clienteId || !p.desde || !p.hasta || !p.emision) return { error: 'Faltan datos del certificado.', numero: null };
   if (!p.items.length) return { error: 'Agregá al menos un remito.', numero: null };
   const supabase = await createClient();
@@ -50,9 +57,13 @@ export async function guardarCertificado(p: CrearCertificadoPayload): Promise<{ 
 }
 
 export async function setEstado(id: string, estado: 'pendiente' | 'aprobado' | 'anulado') {
+  const acceso = await getAcceso();
+  if (!acceso?.puedeEscribir('certificados')) return { error: SIN_PERMISO };
+  if (estado === 'aprobado' && !acceso.esAdmin) return { error: 'Solo un administrador puede aprobar certificados.' };
   const supabase = await createClient();
-  const { error } = await supabase.from('certificados').update({ estado }).eq('id', id);
+  const { data, error } = await supabase.from('certificados').update({ estado }).eq('id', id).select('id');
   revalidatePath('/certificados');
   if (error) return { error: error.message };
+  if (!data?.length) return { error: 'No se pudo modificar el certificado (¿ya no existe o no tenés permiso?).' };
   return { error: null };
 }

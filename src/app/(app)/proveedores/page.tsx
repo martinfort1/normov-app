@@ -1,11 +1,15 @@
 import { createClient } from '@/lib/supabase/server';
 import { money } from '@/lib/format';
+import { getAcceso } from '@/lib/permisos';
+import { SinAcceso } from '@/components/sin-acceso';
 
 export const dynamic = 'force-dynamic';
 
 interface Saldo { id: string; nombre: string; debe: number; haber: number; saldo: number; movimientos: number }
 
 export default async function Proveedores({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const acceso = await getAcceso();
+  if (!acceso?.puedeVer('proveedores')) return <SinAcceso seccion="Saldos de proveedores" />;
   const { q } = await searchParams;
   const supabase = await createClient();
 

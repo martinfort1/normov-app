@@ -10,6 +10,8 @@ import { FiltroMulti } from '@/components/filtro-multi';
 import { filtrar } from '@/lib/filtrar';
 import { BarChart, type Serie } from '@/components/bar-chart';
 import { GroupTable } from '@/components/group-table';
+import { getAcceso } from '@/lib/permisos';
+import { SinAcceso } from '@/components/sin-acceso';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +28,8 @@ type Params = PeriodoParams & { agrupar?: string; cliente?: string; material?: s
 const uniq = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort();
 
 export default async function Operaciones({ searchParams }: { searchParams: Promise<Params> }) {
+  const acceso = await getAcceso();
+  if (!acceso?.puedeVer('viajes')) return <SinAcceso seccion="Operaciones" />;
   const sp = await searchParams;
   const per = periodoDe(sp);
   const agrupacion: Agrupacion = sp.agrupar === 'cliente' ? 'cliente' : 'razon';

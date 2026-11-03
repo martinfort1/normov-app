@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { certNo, fecha, money, num2, remito, UNIDAD } from '@/lib/format';
 import { PrintButton } from './print-button';
+import { getAcceso } from '@/lib/permisos';
+import { SinAcceso } from '@/components/sin-acceso';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +15,8 @@ interface Cert {
 }
 
 export default async function VerCertificado({ params }: { params: Promise<{ id: string }> }) {
+  const acceso = await getAcceso();
+  if (!acceso?.puedeVer('certificados')) return <SinAcceso seccion="Certificados" />;
   const { id } = await params;
   const supabase = await createClient();
   const { data } = await supabase

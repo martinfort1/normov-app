@@ -5,12 +5,16 @@ import { fecha, money, num1 } from '@/lib/format';
 import { PeriodoSwitcher } from '@/components/periodo-switcher';
 import { Donut } from '@/components/donut';
 import { PrecioForm } from './precio-form';
+import { getAcceso } from '@/lib/permisos';
+import { SinAcceso } from '@/components/sin-acceso';
 
 export const dynamic = 'force-dynamic';
 
 interface Carga { fecha: string | null; patente: string; es_camion: boolean; litros: number; tipo: string; estacion: string; chofer: string }
 
 export default async function Combustible({ searchParams }: { searchParams: Promise<PeriodoParams> }) {
+  const acceso = await getAcceso();
+  if (!acceso?.puedeVer('combustible')) return <SinAcceso seccion="Combustible" />;
   const per = periodoDe(await searchParams);
   const supabase = await createClient();
 
@@ -43,7 +47,9 @@ export default async function Combustible({ searchParams }: { searchParams: Prom
       <p className="lede">Cargas de {per.etiqueta}, separadas en camiones (patente) y máquinas o equipos.</p>
       <PeriodoSwitcher per={per} />
 
-      <PrecioForm precio={precio} />
+      {acceso.puedeEscribir('combustible')
+        ? <PrecioForm precio={precio} />
+        : <p className="note">Precio por litro: {precio ? money(precio) : 'sin cargar'}</p>}
 
       {cargasRes.error && <div className="banner err">{cargasRes.error}</div>}
 
