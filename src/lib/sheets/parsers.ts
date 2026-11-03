@@ -72,6 +72,13 @@ export function unitOf(material: string | null): Unidad {
   return 'm3';
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** El ID de fila que exporta la app (uuid). Los IDs de la planilla (otro formato) se ignoran. */
+export const uuidDe = (v: unknown): string | null => {
+  const s = typeof v === 'string' ? v.trim() : '';
+  return UUID_RE.test(s) ? s.toLowerCase() : null;
+};
+
 function findHeader(rows: Row[], req: string[]) {
   for (let i = 0; i < Math.min(rows.length, 15); i++) {
     const h = (rows[i] || []).map(hnorm);
@@ -105,6 +112,8 @@ function locate(libro: Libro, name: string, req: string[]): Located {
 
 // ───────────── Planilla NORMOV 2026 ─────────────
 export interface RemitoRow {
+  /** uuid de la fila en la app, si el archivo vino de una exportación de la app (columna ID VIAJE) */
+  id: string | null;
   numero: string | null; fecha: string; cliente: string | null; razon: string | null; camion: string | null;
   chofer: string | null; cantera: string | null; material: string | null; unidad: Unidad;
   cantidad: number; precio: number; total: number; neto: number; costo: number;
@@ -117,6 +126,7 @@ export function parsePrincipal(libro: Libro): RemitoRow[] {
     camion: col(h, 'CAMION'), m3: h.indexOf('MT3') >= 0 ? h.indexOf('MT3') : col(h, 'MT3'), cantera: col(h, 'CANTERA'),
     material: col(h, 'MATERIAL'), chofer: col(h, 'CHOFER'), precio: col(h, 'PRECIO VTA'),
     total: h.indexOf('TOTAL'), neto: h.indexOf('NETO'), costo: h.indexOf('COSTO MAT.'), costoU: h.indexOf('COSTO MATERIAL'),
+    idv: h.indexOf('ID VIAJE'),
   };
   const out: RemitoRow[] = [];
   for (let i = L.hi + 1; i < L.rows.length; i++) {
@@ -130,6 +140,7 @@ export function parsePrincipal(libro: Libro): RemitoRow[] {
     const neto = (c.neto >= 0 ? num(r[c.neto]) : 0) || total;
     const costo = c.costo >= 0 ? num(r[c.costo]) : c.costoU >= 0 ? num(r[c.costoU]) * cantidad : 0;
     out.push({
+      id: c.idv >= 0 ? uuidDe(r[c.idv]) : null,
       numero: remitoKey(r[c.remito]), fecha, cliente: label(r[c.cliente]), razon: label(r[c.razon]),
       camion: label(r[c.camion]), chofer: label(r[c.chofer]), cantera: label(r[c.cantera]),
       material, unidad: unitOf(material), cantidad, precio: num(r[c.precio]), total: total || neto, neto, costo,
@@ -174,8 +185,11 @@ export function parseClientesDiego(libro: Libro): SaldoRow[] {
 }
 
 export interface MovProvRow {
+  id: string | null;
   fecha: string | null; proveedor: string; centro: string; unidad: string; subrubro: string; rubro: string;
   detalle: string; factura: string; debe: number; haber: number; forma: string; cheque: string; obs: string;
+  /** "Fecha Cobro/Pago": el día que la plata sale de verdad (para el cash flow) */
+  fechaPago: string | null;
 }
 export function parseProveedores(libro: Libro): MovProvRow[] {
   const L = locate(libro, 'Cta Cte Proveedores', ['FECHA', 'PROVEEDOR', 'DEBE', 'HABER']);
@@ -184,6 +198,7 @@ export function parseProveedores(libro: Libro): MovProvRow[] {
     f: col(h, 'FECHA'), p: col(h, 'PROVEEDOR'), cen: col(h, 'CENTRO DE'), un: col(h, 'UNIDAD DE NEGOCIO'),
     sub: col(h, 'SUB-RUBRO'), rub: h.indexOf('RUBRO'), det: col(h, 'DETALLE'), fac: col(h, 'N° FACTURA'),
     d: col(h, 'DEBE'), hb: col(h, 'HABER'), fp: col(h, 'FORMA DE PAGO'), ch: col(h, 'N° CHEQUE'), obs: col(h, 'OBSERVACIONES'),
+    fcp: col(h, 'FECHA COBRO'), id: h.indexOf('ID'),
   };
   const out: MovProvRow[] = [];
   for (let i = L.hi + 1; i < L.rows.length; i++) {
@@ -194,6 +209,8 @@ export function parseProveedores(libro: Libro): MovProvRow[] {
     if (!p && !debe && !haber) continue;
     if (!p || p === '-') p = '(sin proveedor)';
     out.push({
+      id: c.id >= 0 ? uuidDe(r[c.id]) : null,
+      fechaPago: c.fcp >= 0 ? toISO(r[c.fcp]) : null,
       fecha: toISO(r[c.f]), proveedor: p, centro: clean(r[c.cen]), unidad: clean(r[c.un]), subrubro: clean(r[c.sub]),
       rubro: clean(r[c.rub]), detalle: clean(r[c.det]), factura: c.fac >= 0 ? clean(r[c.fac]) : '', debe, haber,
       forma: clean(r[c.fp]), cheque: c.ch >= 0 ? clean(r[c.ch]) : '', obs: clean(r[c.obs]),
@@ -203,6 +220,7 @@ export function parseProveedores(libro: Libro): MovProvRow[] {
 }
 
 export interface ChequeRow {
+  id: string | null; cuit: string;
   emision: string | null; tipo: string; contraparte: string; numero: string; banco: string; librador: string;
   monto: number; vto: string | null; estado: string; endosado: string; obs: string;
 }
@@ -213,6 +231,7 @@ export function parseCheques(libro: Libro): ChequeRow[] {
     fe: col(h, 'FECHA EMISION'), tipo: col(h, 'TIPO'), cp: col(h, 'CLIENTE/PROVEEDOR'), nro: col(h, 'N° CHEQUE'),
     banco: col(h, 'BANCO'), lib: col(h, 'LIBRADOR'), monto: col(h, 'MONTO'), vto: col(h, 'FECHA VENCIMIENTO'),
     estado: h.indexOf('ESTADO'), end: col(h, 'ENDOSADO A'), obs: col(h, 'OBSERVACIONES'),
+    cuit: h.indexOf('CUIT'), id: h.indexOf('ID'),
   };
   const out: ChequeRow[] = [];
   for (let i = L.hi + 1; i < L.rows.length; i++) {
@@ -223,6 +242,8 @@ export function parseCheques(libro: Libro): ChequeRow[] {
     if (!monto || !(tipo || r[c.nro])) continue;
     const nro = r[c.nro];
     out.push({
+      id: c.id >= 0 ? uuidDe(r[c.id]) : null,
+      cuit: c.cuit >= 0 ? clean(r[c.cuit]) : '',
       emision: toISO(r[c.fe]),
       tipo: tipo.startsWith('TERC') ? 'Tercero' : tipo.startsWith('PROP') ? 'Propio' : tipo || '—',
       contraparte: clean(r[c.cp]).replace(/^-$/, ''),
@@ -239,6 +260,7 @@ const PLATE = /^([A-Z]{3}\d{3}|[A-Z]{2}\d{3}[A-Z]{2})$/;
 export const isTruck = (p: string) => PLATE.test(up(p).replace(/[\s\-.]/g, ''));
 
 export interface CargaRow {
+  id: string | null; precioLitro: number | null;
   fecha: string | null; remito: string; patente: string; litros: number; tipo: string; estacion: string; chofer: string; camion: boolean;
 }
 export function parseCombustible(libro: Libro): CargaRow[] {
@@ -247,6 +269,7 @@ export function parseCombustible(libro: Libro): CargaRow[] {
   const c = {
     f: col(h, 'FECHA'), rem: col(h, 'REMITO'), pat: col(h, 'PATENTE'), lt: col(h, 'LITROS'),
     tipo: h.indexOf('TIPO'), est: col(h, 'ESTACION'), ch: col(h, 'CHOFER'),
+    pl: col(h, 'PRECIO LITRO'), id: h.indexOf('ID'),
   };
   const out: CargaRow[] = [];
   for (let i = L.hi + 1; i < L.rows.length; i++) {
@@ -255,7 +278,10 @@ export function parseCombustible(libro: Libro): CargaRow[] {
     const patente = up(r[c.pat]);
     const litros = num(r[c.lt]);
     if (!patente || !litros) continue;
+    const pl = c.pl >= 0 ? num(r[c.pl]) : 0;
     out.push({
+      id: c.id >= 0 ? uuidDe(r[c.id]) : null,
+      precioLitro: pl > 0 ? pl : null,
       fecha: toISO(r[c.f]), remito: clean(r[c.rem]), patente, litros,
       tipo: up(r[c.tipo]) || '—', estacion: up(r[c.est]) || '—', chofer: up(r[c.ch]) || '—', camion: isTruck(patente),
     });

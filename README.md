@@ -16,7 +16,8 @@ Chofer → WhatsApp → Admin carga en Sheets → Apps Script (automático) → 
 | Esquema SQL (remitos, certificados, proveedores, cheques, combustible, roles, RLS, vistas) | corrido en producción |
 | Migraciones 0002 (certificados atómicos), 0003 (clave de remito por fecha) | corridas en producción |
 | Migración 0004 (`sync_log`, pantalla Sistema) | **falta correr** si la pantalla Sistema avisa que falta la tabla; va ANTES que la 0005 |
-| Migración 0005 (permisos por usuario y por sección, pantalla Usuarios) | **nueva — falta correr**, después de la 0004 (la app sigue andando sin ella, con los permisos de antes) |
+| Migración 0005 (permisos por usuario y por sección, pantalla Usuarios) | corrida |
+| Migración 0006 (carga de datos: columnas nuevas, quién cargó, adjuntos) | **nueva — falta correr**, después de la 0005 (el sync sigue andando sin ella; Cargar datos no funciona hasta correrla) |
 | Importador de planillas (.xlsx) | respaldo manual; el sync automático ya cubre las tres planillas |
 | Login con email y contraseña | funcionando, en producción (Vercel) |
 | Login con Google | pendiente (necesita Client ID de Google Cloud) |
@@ -25,7 +26,10 @@ Chofer → WhatsApp → Admin carga en Sheets → Apps Script (automático) → 
 | Saldos de clientes y de proveedores, Cheques (con filtro de período opcional, por vencimiento) | funcionando |
 | Certificados (armar, guardar, aprobar/anular, imprimir a PDF, exportar Excel) | funcionando |
 | Pantalla "Sistema" (estado del sync, historial) | funcionando |
-| Pantalla "Usuarios" (crear cuentas, permisos por sección) | nueva — necesita la migración 0005 |
+| Pantalla "Usuarios" (crear cuentas, permisos por sección) | funcionando |
+| Cargar datos: viaje, combustible, proveedor, cheque (menús desplegables, adjunto de foto o PDF, anular lo cargado por error) | nuevo — necesita la migración 0006 |
+| Excel: exportar con las columnas de las planillas e importar (con revisión previa) | nuevo — necesita la migración 0006 |
+| Cargar datos: cobranzas de clientes y caja diaria | pendiente (necesitan tablas nuevas) |
 | Lectura de remitos desde foto | pendiente (etapa 2) |
 | Sync automático desde Google Sheets (`/api/sync` + Apps Script) | **en producción**, con activadores cada 15-30 min en las tres planillas |
 
@@ -37,7 +41,7 @@ Hoy las planillas siguen siendo la fuente de verdad y la app las lee. La meta es
 en la app, con cada persona viendo y cargando solo lo suyo, y que las planillas queden como archivo. En orden:
 
 1. **Permisos por usuario y sección** — hecho (migración 0005, pantalla Usuarios).
-2. **Carga directa a la base**, cada formulario protegido por el permiso de su sección: viaje, combustible, movimiento de proveedor, cobro / certificación de cliente, cheque (alta y cambio de estado), caja diaria, y poder anular lo cargado por error. Es lo que hoy hace la pestaña "Cargar" del tablero de FRAN, pero escribiendo en la base en vez de en Drive.
+2. **Carga directa a la base**, cada formulario protegido por el permiso de su sección. Hecho: viaje, combustible, movimiento de proveedor y cheque (alta), con anulación de lo cargado por error, adjunto de foto/PDF y Excel de ida y vuelta. Falta: cobro / certificación de cliente, caja diaria y cambio de estado de cheques. Es lo que hace la pestaña "Cargar" del tablero de FRAN, pero escribiendo en la base en vez de en Drive.
 3. **Lo que hoy solo existe en las planillas**: cuenta corriente de clientes con imputación de cobros (para "certificado sin cobrar / cobrado" y "viajes sin certificar"), caja diaria con saldos por cuenta, y cash flow proyectado.
 4. **Corte**: cuando una sección ya se carga en la app, se apaga el sync de esa planilla (si no, el sync pisaría las correcciones hechas en la app con lo que dice la planilla). Antes del corte conviene un respaldo completo en Excel.
 
@@ -110,7 +114,10 @@ Listo: desde ahí, los cambios en cada planilla llegan solos a la base, sin que 
 - **Permisos:** cada usuario tiene un nivel por sección (Viajes, Combustible, Certificados, Saldos de clientes, Saldos de proveedores, Cheques, Sistema): *sin acceso*, *solo ver* o *ver y cargar*. El rol `admin` accede a todo, es el único que aprueba certificados y gestiona usuarios (pantalla Usuarios). `sin_acceso` es una cuenta pendiente o desactivada. Los permisos los hace cumplir la base de datos (RLS, migración 0005), no solo las pantallas; la pantalla además oculta lo que no corresponde. Armar un certificado necesita *ver y cargar* en Certificados y *ver* en Viajes (los remitos salen de ahí).
 - **Pruebas de la base:** `cd supabase/tests && npm install && npm test` corre todas las migraciones sobre un Postgres en memoria (PGlite) y comprueba que cada tipo de usuario vea y cambie solo lo que debe. No toca ninguna base real. Conviene correrlas antes de aplicar una migración nueva.
 - **Numeración de certificados:** es una secuencia de la base. Si ya emitiste certificados con el artifact, ajustá el arranque, por ejemplo `alter table certificados alter column numero restart with 120;`.
-- `xlsx` (SheetJS 0.18) se usa solo en el script local con archivos propios. No lo uses para leer archivos de terceros.
+- **Excel (SheetJS):** la importación desde la app lee archivos subidos por usuarios con permiso de carga (máx. 4 MB). La versión instalada, `xlsx` 0.18.5, tiene vulnerabilidades conocidas con archivos de terceros; para el uso interno actual el riesgo es bajo, pero conviene actualizar a la 0.20.x, que SheetJS publica solo en su sitio y no en npm: `npm install https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`.
+- **Adjuntos:** se guardan en el almacenamiento privado `adjuntos` de Supabase, en una carpeta por sección (`viajes/`, `combustible/`, `proveedores/`, `cheques/`). Ver un adjunto exige poder ver esa sección; subirlo o borrarlo, poder cargar en ella (políticas de la migración 0006). Las fotos se achican a ~1600 px antes de subir. Los links para verlos son temporales (2 minutos).
+- **Cargas desde la app vs. planilla:** lo cargado desde la app queda marcado (`origen`, autor) y solo eso se puede anular desde la app. Mientras el sync de las planillas siga activo, algo cargado en la app *y* en la planilla se reconoce como la misma fila (comparten la misma clave) en viajes con remito, combustible, proveedores y cheques; si se corrige un dato en un lado, el sync lo trata como una fila nueva (limitación ya conocida de la etapa puente).
+- **Excel de ida y vuelta:** la exportación trae una columna ID (`ID VIAJE` en Viajes). Al importar, las filas con ID se actualizan en su lugar aunque cambies su número, fecha o contenido; las filas sin ID (por ejemplo, una descarga directa de Google Sheets) se reconocen por su clave natural. Las columnas que en la planilla son fórmulas (Saldo Acumulado, IDC, ICL…) salen vacías.
 
 ## Estructura
 

@@ -41,6 +41,16 @@ before(async () => {
     grant usage on schema public, auth to anon, authenticated, service_role;
     alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
     alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+
+    -- Simula el almacenamiento de Supabase (storage.buckets, storage.objects y storage.foldername)
+    create schema storage;
+    create table storage.buckets (id text primary key, name text, public boolean default false);
+    create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets(id), name text, created_at timestamptz default now());
+    alter table storage.objects enable row level security;
+    create function storage.foldername(name text) returns text[] language plpgsql as $$
+      declare partes text[]; begin partes := string_to_array(name, '/'); return partes[1:array_length(partes, 1) - 1]; end $$;
+    grant usage on schema storage to anon, authenticated, service_role;
+    grant all on storage.buckets, storage.objects to anon, authenticated, service_role;
   `);
 
   // Esquema tal como estaba antes de los permisos (0001..0004)
@@ -164,6 +174,56 @@ test('certificados: crear requiere escritura en certificados; aprobar, ser admin
   await como(U.viajes, async () => {
     assert.equal((await q('select count(*)::int n from certificados')).rows[0].n, 0);
   });
+});
+
+test('adjuntos: ver y subir según el permiso de la sección de la carpeta', async () => {
+  const subir = (nombre) => q("insert into storage.objects (bucket_id, name) values ('adjuntos', $1)", [nombre]);
+  const cuantos = async () => (await q("select count(*)::int n from storage.objects where bucket_id = 'adjuntos'")).rows[0].n;
+
+  // quien carga viajes sube a viajes/, no a cheques/
+  await como(U.viajes, async () => {
+    await subir('viajes/2026-09/foto1.jpg');
+    await assert.rejects(() => subir('cheques/2026-09/foto2.jpg'), (e) => e.code === '42501');
+    await assert.rejects(() => subir('carpeta-inventada/x.jpg'), (e) => e.code === '42501', 'una carpeta que no es una sección no se acepta');
+  });
+  // el admin sube a cheques/
+  await como(U.admin, async () => { await subir('cheques/2026-09/foto2.jpg'); });
+
+  // sin permiso en cheques, el de viajes ve su adjunto pero no el de cheques/
+  await q("delete from permisos where user_id = $1 and modulo = 'cheques'", [U.viajes]);
+  await como(U.viajes, async () => {
+    const r = await q("select name from storage.objects where bucket_id = 'adjuntos' order by name");
+    assert.deepEqual(r.rows.map((x) => x.name), ['viajes/2026-09/foto1.jpg']);
+  });
+  // el lector (legacy) puede ver todo pero no subir
+  await como(U.lector, async () => {
+    assert.equal(await cuantos(), 2);
+    await assert.rejects(() => subir('viajes/2026-09/otra.jpg'), (e) => e.code === '42501');
+  });
+  // la cuenta pendiente no ve nada
+  await como(U.pendiente, async () => { assert.equal(await cuantos(), 0); });
+  // borrar: solo quien puede cargar en esa sección
+  await como(U.lector, async () => {
+    assert.equal((await q("delete from storage.objects where name like 'viajes/%' returning id")).rows.length, 0);
+  });
+  await como(U.viajes, async () => {
+    assert.equal((await q("delete from storage.objects where name like 'viajes/%' returning id")).rows.length, 1);
+  });
+});
+
+test('registros cargados desde la app guardan autor, origen y adjunto', async () => {
+  await como(U.operador, async () => {
+    await q(`insert into cargas_combustible (fecha, patente, es_camion, litros, origen, autor, foto_path, precio_litro, source_hash)
+             values ('2026-09-10', 'AB123CD', true, 100, 'app', 'Operador Test', 'combustible/2026-09/a.jpg', 1500.5, 'h1')`);
+    await q(`insert into movimientos_proveedor (proveedor_id, fecha, debe, fecha_pago, origen, foto_path, source_hash)
+             select id, '2026-09-10', 1000, '2026-10-10', 'app', 'proveedores/2026-09/b.jpg', 'h2' from proveedores limit 1`);
+    await q(`insert into cheques (tipo, monto, cuit, origen, foto_path, source_hash) values ('Tercero', 10, '20-1-3', 'app', 'cheques/2026-09/c.jpg', 'h3')`);
+    const c = await q("select origen, autor, precio_litro from cargas_combustible where source_hash = 'h1'");
+    assert.equal(c.rows[0].origen, 'app'); assert.equal(c.rows[0].autor, 'Operador Test'); assert.equal(Number(c.rows[0].precio_litro), 1500.5);
+  });
+  // las filas que vienen de la planilla quedan con origen 'planilla' por defecto
+  const r = await q("select origen from cheques where monto = 500");
+  assert.equal(r.rows[0].origen, 'planilla');
 });
 
 test('un remito no puede estar en dos certificados vigentes', async () => {

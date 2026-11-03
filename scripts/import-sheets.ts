@@ -6,10 +6,9 @@
      npm run import -- --planilla data/planilla.xlsx --diego data/diego.xlsx --comb data/combustible.xlsx
    Cada archivo es opcional. */
 import { readFileSync } from 'node:fs';
-import * as XLSX from 'xlsx';
 import { createClient } from '@supabase/supabase-js';
 import { importarPlanilla, importarDiego, importarCombustible } from '../src/lib/sheets/importar';
-import type { Libro, Row } from '../src/lib/sheets/parsers';
+import { libroDeBuffer } from '../src/lib/sheets/libro';
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -18,15 +17,7 @@ const db = createClient(url, key, { auth: { persistSession: false } });
 
 const args = process.argv.slice(2);
 const arg = (n: string) => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : undefined; };
-
-function libroDe(path: string): Libro {
-  const wb = XLSX.read(readFileSync(path), { type: 'buffer', cellDates: false });
-  const libro: Libro = {};
-  for (const name of wb.SheetNames) {
-    libro[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: null, blankrows: false }) as Row[];
-  }
-  return libro;
-}
+const libroDe = (path: string) => libroDeBuffer(readFileSync(path));
 
 async function main() {
   const [p, d, c] = [arg('planilla'), arg('diego'), arg('comb')];

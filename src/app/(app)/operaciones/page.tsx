@@ -12,12 +12,13 @@ import { BarChart, type Serie } from '@/components/bar-chart';
 import { GroupTable } from '@/components/group-table';
 import { getAcceso } from '@/lib/permisos';
 import { SinAcceso } from '@/components/sin-acceso';
+import { VerAdjunto } from '@/components/ver-adjunto';
 
 export const dynamic = 'force-dynamic';
 
 interface Remito {
   id: string; numero: string; fecha: string; camion: string | null; chofer: string | null; cantera: string | null;
-  cantidad: number; precio: number; total: number; costo: number; neto: number;
+  cantidad: number; precio: number; total: number; costo: number; neto: number; foto_path: string | null;
   clientes: { razon_social: string } | null;
   obras: { nombre: string } | null;
   materiales: { nombre: string; unidad: string } | null;
@@ -43,7 +44,7 @@ export default async function Operaciones({ searchParams }: { searchParams: Prom
     outer = (await fetchAll((from, to) =>
       supabase
         .from('remitos')
-        .select('id,numero,fecha,camion,chofer,cantera,cantidad,precio,total,costo,neto,clientes(razon_social),obras(nombre),materiales(nombre,unidad)')
+        .select('id,numero,fecha,camion,chofer,cantera,cantidad,precio,total,costo,neto,foto_path,clientes(razon_social),obras(nombre),materiales(nombre,unidad)')
         .gte('fecha', rango.desde).lte('fecha', rango.hasta)
         .order('fecha', { ascending: false }).order('numero', { ascending: false })
         .range(from, to),
@@ -115,6 +116,7 @@ export default async function Operaciones({ searchParams }: { searchParams: Prom
         <FiltroMulti name="camion" label="Camión" opciones={uniq(enPeriodo.map((r) => r.camion))} />
         <FiltroMulti name="chofer" label="Chofer" opciones={uniq(enPeriodo.map((r) => r.chofer))} />
         {hayFiltros && <a href="?" className="pill bad" style={{ textDecoration: 'none' }}>Quitar filtros</a>}
+        <a className="btn" style={{ marginLeft: 'auto' }} href={`/api/exportar?tipo=viajes&desde=${per.desde}&hasta=${per.hasta}`} title="Descarga los viajes del período, con las columnas de la planilla">Descargar Excel del período</a>
       </div>
 
       {error && <div className="banner err">{error}</div>}
@@ -162,7 +164,7 @@ export default async function Operaciones({ searchParams }: { searchParams: Prom
         <table>
           <thead>
             <tr><th>Fecha</th><th>Remito</th><th>{agrupacion === 'razon' ? 'Razón social' : 'Cliente / obra'}</th><th>Material</th><th>Camión</th><th>Chofer</th>
-              <th className="r">Cant.</th><th className="r">Precio</th><th className="r">Total</th></tr>
+              <th className="r">Cant.</th><th className="r">Precio</th><th className="r">Total</th><th /></tr>
           </thead>
           <tbody>
             {filtrados.slice(0, 500).map((r) => (
@@ -170,6 +172,7 @@ export default async function Operaciones({ searchParams }: { searchParams: Prom
                 <td>{fecha(r.fecha)}</td><td>{remito(r.numero)}</td><td>{campoCliente(r) ?? '—'}</td>
                 <td>{r.materiales?.nombre ?? '—'}</td><td>{r.camion ?? '—'}</td><td>{r.chofer ?? '—'}</td>
                 <td className="r">{num2(r.cantidad)}</td><td className="r">{money(r.precio)}</td><td className="r">{money(r.total)}</td>
+                <td>{r.foto_path && <VerAdjunto path={r.foto_path} etiqueta="Foto" />}</td>
               </tr>
             ))}
           </tbody>

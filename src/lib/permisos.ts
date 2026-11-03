@@ -66,7 +66,8 @@ export const getAcceso = cache(async (): Promise<Acceso | null> => {
 /** Rutas que se muestran en el menú lateral según lo que el usuario puede hacer. */
 export function rutasVisibles(a: Acceso): string[] {
   const rutas: string[] = MODULOS.filter((m) => a.puedeVer(m.key)).map((m) => m.ruta);
-  if (a.algunaEscritura) rutas.push('/cargar');
+  // "Cargar datos" tiene formularios para estas secciones; sin permiso de carga en ninguna, no se muestra
+  if ((['viajes', 'combustible', 'proveedores', 'cheques'] as const).some((m) => a.puedeEscribir(m))) rutas.push('/cargar');
   if (a.esAdmin) rutas.push('/caja', '/cashflow', '/usuarios');
   return rutas;
 }

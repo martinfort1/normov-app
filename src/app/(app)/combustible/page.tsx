@@ -47,6 +47,8 @@ export default async function Combustible({ searchParams }: { searchParams: Prom
       <p className="lede">Cargas de {per.etiqueta}, separadas en camiones (patente) y máquinas o equipos.</p>
       <PeriodoSwitcher per={per} />
 
+      <p style={{ margin: '0 0 12px' }}><a className="btn" href={`/api/exportar?tipo=combustible&desde=${per.desde}&hasta=${per.hasta}`}>Descargar Excel del período</a></p>
+
       {acceso.puedeEscribir('combustible')
         ? <PrecioForm precio={precio} />
         : <p className="note">Precio por litro: {precio ? money(precio) : 'sin cargar'}</p>}

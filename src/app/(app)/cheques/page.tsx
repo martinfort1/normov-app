@@ -39,6 +39,7 @@ export default async function Cheques({ searchParams }: { searchParams: Promise<
       <div className="filters">
         <TogglePeriodo label="Filtrar por período (vencimiento)" />
         {conPeriodo && <PeriodoSwitcher per={per} />}
+        <a className="btn" style={{ marginLeft: 'auto' }} href={conPeriodo ? `/api/exportar?tipo=cheques&desde=${per.desde}&hasta=${per.hasta}` : '/api/exportar?tipo=cheques'}>Descargar Excel</a>
       </div>
 
       {error && <div className="banner err">{error.message}</div>}
