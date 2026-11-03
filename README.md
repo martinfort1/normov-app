@@ -15,8 +15,8 @@ Chofer → WhatsApp → Admin carga en Sheets → Apps Script (automático) → 
 |---|---|
 | Esquema SQL (remitos, certificados, proveedores, cheques, combustible, roles, RLS, vistas) | corrido en producción |
 | Migraciones 0002 (certificados atómicos), 0003 (clave de remito por fecha) | corridas en producción |
-| Migración 0004 (`sync_log`, pantalla Sistema) | corrida |
-| Migración 0005 (permisos por usuario y por sección, pantalla Usuarios) | **nueva — falta correr** (la app sigue andando sin ella, con los permisos de antes) |
+| Migración 0004 (`sync_log`, pantalla Sistema) | **falta correr** si la pantalla Sistema avisa que falta la tabla; va ANTES que la 0005 |
+| Migración 0005 (permisos por usuario y por sección, pantalla Usuarios) | **nueva — falta correr**, después de la 0004 (la app sigue andando sin ella, con los permisos de antes) |
 | Importador de planillas (.xlsx) | respaldo manual; el sync automático ya cubre las tres planillas |
 | Login con email y contraseña | funcionando, en producción (Vercel) |
 | Login con Google | pendiente (necesita Client ID de Google Cloud) |

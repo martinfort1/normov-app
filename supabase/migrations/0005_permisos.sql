@@ -7,6 +7,14 @@
 
 begin;
 
+-- Esta migración usa la tabla sync_log (la crea la 0004): si falta, avisar claro en vez de fallar a mitad de camino.
+do $$
+begin
+  if to_regclass('public.sync_log') is null then
+    raise exception 'Falta correr antes 0004_sync_log.sql. Ejecutala y después volvé a correr esta (0005).';
+  end if;
+end $$;
+
 create type nivel_permiso as enum ('ninguno', 'lectura', 'escritura');
 create type modulo_app    as enum ('viajes', 'combustible', 'certificados', 'clientes', 'proveedores', 'cheques', 'sistema');
 
