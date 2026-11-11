@@ -31,15 +31,11 @@ export default function Login() {
     window.location.href = '/operaciones';
   }
 
-  async function recuperar(e: React.MouseEvent<HTMLButtonElement>) {
-    const form = e.currentTarget.form;
-    const email = String(new FormData(form!).get('email') ?? '').trim();
-    setAviso(null);
-    if (!email) { setError('Escribí tu email arriba y volvé a tocar "Olvidé mi contraseña".'); return; }
+  // Sin SMTP propio en Supabase los mails de recuperación no son confiables: la clave la cambia un administrador
+  // desde la pantalla Usuarios. (Las pantallas /auth/confirm y /nueva-clave quedan listas para cuando haya SMTP.)
+  function recuperar() {
     setError(null);
-    await createClient().auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}/auth/callback?next=/nueva-clave` });
-    // Mismo mensaje exista o no el email, para no revelar qué cuentas hay.
-    setAviso('Si el email tiene una cuenta, te enviamos un link para elegir una nueva contraseña. Abrilo en este mismo navegador.');
+    setAviso('Pedile a un administrador que te cambie la contraseña desde Usuarios → Cambiar contraseña, y después podés ingresar con la nueva.');
   }
 
   async function entrarConGoogle() {
