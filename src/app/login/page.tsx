@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/browser';
 
 // El botón de Google aparece solo si NEXT_PUBLIC_GOOGLE_LOGIN=1 (cuando ya esté configurado en Supabase).
@@ -8,6 +8,10 @@ const GOOGLE = process.env.NEXT_PUBLIC_GOOGLE_LOGIN === '1';
 export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('error') === 'enlace') setError('El link venció o se abrió en otro navegador. Pedí uno nuevo con "Olvidé mi contraseña".');
+  }, []);
 
   async function entrarConEmail(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -26,6 +30,17 @@ export default function Login() {
     window.location.href = '/operaciones';
   }
 
+  async function recuperar(e: React.MouseEvent<HTMLButtonElement>) {
+    const form = e.currentTarget.form;
+    const email = String(new FormData(form!).get('email') ?? '').trim();
+    setAviso(null);
+    if (!email) { setError('Escribí tu email arriba y volvé a tocar "Olvidé mi contraseña".'); return; }
+    setError(null);
+    await createClient().auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}/auth/callback?next=/nueva-clave` });
+    // Mismo mensaje exista o no el email, para no revelar qué cuentas hay.
+    setAviso('Si el email tiene una cuenta, te enviamos un link para elegir una nueva contraseña. Abrilo en este mismo navegador.');
+  }
+
   async function entrarConGoogle() {
     await createClient().auth.signInWithOAuth({
       provider: 'google',
@@ -42,7 +57,9 @@ export default function Login() {
           <input type="email" name="email" placeholder="Email" autoComplete="username" required />
           <input type="password" name="password" placeholder="Contraseña" autoComplete="current-password" required />
           <button className="primary" type="submit" disabled={cargando}>{cargando ? 'Ingresando…' : 'Ingresar'}</button>
+          <button type="button" onClick={recuperar} style={{ background: 'none', border: 0, padding: 0, color: 'inherit', textDecoration: 'underline', cursor: 'pointer', fontSize: 13, justifySelf: 'start' }}>Olvidé mi contraseña</button>
           {error && <div className="banner err" style={{ margin: 0 }}>{error}</div>}
+          {aviso && <div className="banner" style={{ margin: 0 }}>{aviso}</div>}
         </form>
         {GOOGLE && (
           <p style={{ marginBottom: 0 }}>
