@@ -36,7 +36,7 @@ export async function catalogoViaje(db: SupabaseClient): Promise<CatalogoViaje> 
     db.from('materiales').select('nombre, unidad').order('nombre').limit(500),
     fetchAll<RemitoCat>((from, to) =>
       db.from('remitos').select('cantera,camion,chofer,precio,costo,cantidad,clientes(razon_social),obras(nombre),materiales(nombre)')
-        .gte('fecha', desdeReciente()).order('fecha', { ascending: false }).range(from, to),
+        .gte('fecha', desdeReciente()).order('fecha', { ascending: false }).order('id').range(from, to),
     ).catch(() => [] as RemitoCat[]),
   ]);
   const precios: CatalogoViaje['precios'] = {};
@@ -61,7 +61,7 @@ export async function catalogoViaje(db: SupabaseClient): Promise<CatalogoViaje> 
 export interface CatalogoCombustible { patentes: string[]; tipos: string[]; estaciones: string[]; choferes: string[] }
 export async function catalogoCombustible(db: SupabaseClient): Promise<CatalogoCombustible> {
   const filas = await fetchAll<{ patente: string; tipo: string | null; estacion: string | null; chofer: string | null }>((from, to) =>
-    db.from('cargas_combustible').select('patente,tipo,estacion,chofer').gte('fecha', desdeReciente()).range(from, to),
+    db.from('cargas_combustible').select('patente,tipo,estacion,chofer').gte('fecha', desdeReciente()).order('id').range(from, to),
   ).catch(() => []);
   return {
     patentes: frecuentes(filas.map((f) => f.patente)), tipos: frecuentes(filas.map((f) => f.tipo)),
@@ -79,7 +79,7 @@ export async function catalogoProveedor(db: SupabaseClient): Promise<CatalogoPro
   const [provs, movs] = await Promise.all([
     db.from('proveedores').select('nombre').order('nombre').limit(5000),
     fetchAll<{ centro_costo: string | null; unidad_negocio: string | null; rubro: string | null; subrubro: string | null; forma_pago: string | null }>((from, to) =>
-      db.from('movimientos_proveedor').select('centro_costo,unidad_negocio,rubro,subrubro,forma_pago').range(from, to),
+      db.from('movimientos_proveedor').select('centro_costo,unidad_negocio,rubro,subrubro,forma_pago').order('id').range(from, to),
     ).catch(() => []),
   ]);
   const porRubro: Record<string, string[]> = {};
@@ -99,7 +99,7 @@ export interface CatalogoCheque { bancos: string[]; contrapartes: string[]; libr
 export async function catalogoCheque(db: SupabaseClient): Promise<CatalogoCheque> {
   const [chq, provs] = await Promise.all([
     fetchAll<{ banco: string | null; contraparte: string | null; librador: string | null; endosado_a: string | null }>((from, to) =>
-      db.from('cheques').select('banco,contraparte,librador,endosado_a').range(from, to),
+      db.from('cheques').select('banco,contraparte,librador,endosado_a').order('id').range(from, to),
     ).catch(() => []),
     db.from('proveedores').select('nombre').limit(5000),
   ]);
@@ -118,10 +118,13 @@ type Fila = Record<string, unknown>;
 export async function historial(db: SupabaseClient, tipo: 'viaje' | 'combustible' | 'proveedor' | 'cheque'): Promise<ItemHistorial[]> {
   const N = 15;
   if (tipo === 'viaje') {
-    const { data } = await db.from('remitos').select('id,numero,fecha,cantidad,total,autor,creado,foto_path,clientes(razon_social),obras(nombre),materiales(nombre)')
-      .eq('origen', 'manual').order('creado', { ascending: false }).limit(N);
+    const columnas = (conId: boolean): string => `id,${conId ? 'id_viaje,' : ''}numero,fecha,cantidad,total,autor,creado,foto_path,clientes(razon_social),obras(nombre),materiales(nombre)`;
+    const pedir = (conId: boolean) => db.from('remitos').select(columnas(conId)).eq('origen', 'manual').order('creado', { ascending: false }).limit(N);
+    let { data, error } = await pedir(true);
+    if (error && /id_viaje/.test(error.message)) ({ data, error } = await pedir(false)); // antes de la migración 0007
+    void error;
     return ((data ?? []) as unknown as (Fila & { clientes: { razon_social: string } | null; obras: { nombre: string } | null; materiales: { nombre: string } | null })[]).map((r) => ({
-      id: r.id as string, titulo: `${fmtFecha(r.fecha as string)} · remito ${fmtRemito(r.numero as string)}`,
+      id: r.id as string, titulo: `${fmtFecha(r.fecha as string)} · remito ${fmtRemito(r.numero as string)}${r.id_viaje ? ` · ID ${r.id_viaje}` : ''}`,
       detalle: `${r.obras?.nombre ?? r.clientes?.razon_social ?? '—'} · ${r.materiales?.nombre ?? '—'} · ${num2(r.cantidad as number)} · ${money(r.total as number)}`,
       cuando: cuando(r.creado as string), autor: (r.autor as string) ?? null, fotoPath: (r.foto_path as string) ?? null,
     }));

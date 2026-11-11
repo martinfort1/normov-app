@@ -33,9 +33,9 @@ export function ArmarCertificado({ clientes }: { clientes: Cliente[] }) {
     startTransition(async () => {
       const { rows, error } = await buscarRemitos(clienteId, desde, hasta, incluirSinNumero);
       if (error) { setMsg({ tipo: 'bad', texto: error }); return; }
-      // El número de remito se reutiliza con el tiempo: la clave es (número, fecha).
-      const have = new Set(items.map((i) => `${i.remito_numero}|${i.fecha}`));
-      const nuevos = rows.filter((r) => !have.has(`${r.numero}|${r.fecha}`)).map((r): Item => ({
+      // Cada viaje de la planilla es único por su remito_id (el número+fecha puede repetirse en viajes distintos).
+      const have = new Set(items.filter((i) => i.remito_id).map((i) => i.remito_id as string));
+      const nuevos = rows.filter((r) => !have.has(r.remito_id)).map((r): Item => ({
         key: r.remito_id, remito_id: r.remito_id, remito_numero: r.numero, fecha: r.fecha,
         cantidad: r.cantidad, precio: r.precio, total: round2(r.cantidad * r.precio), origen: 'planilla',
       }));
@@ -48,7 +48,7 @@ export function ArmarCertificado({ clientes }: { clientes: Cliente[] }) {
     const num = manual.remito.trim();
     const cant = parseFloat(manual.cantidad), precio = parseFloat(manual.precio);
     if (!num || !manual.fecha || !(cant > 0) || !(precio >= 0)) { setMsg({ tipo: 'warn', texto: 'Completá fecha, número de remito, cantidad y precio.' }); return; }
-    if (items.some((i) => i.remito_numero === num && i.fecha === manual.fecha)) { setMsg({ tipo: 'warn', texto: `El remito ${num} del ${manual.fecha} ya está en este certificado.` }); return; }
+    if (items.some((i) => i.origen === 'manual' && i.remito_numero === num && i.fecha === manual.fecha)) { setMsg({ tipo: 'warn', texto: `El remito ${num} del ${manual.fecha} ya está en este certificado.` }); return; }
     setItems((prev) => [...prev, { key: 'm' + num + '|' + manual.fecha, remito_id: null, remito_numero: num, fecha: manual.fecha, cantidad: cant, precio, total: round2(cant * precio), origen: 'manual' }]);
     setManual({ fecha: manual.fecha, remito: '', cantidad: '', precio: '' });
     setMsg(null);

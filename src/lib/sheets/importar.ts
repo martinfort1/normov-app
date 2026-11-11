@@ -10,6 +10,8 @@ import {
   type Libro, type Unidad,
 } from './parsers';
 import { hasher, hasherSinRemito, partesMov, partesCheque, partesCarga, partesSinRemito } from './claves';
+import { planificarRemitos, type Existente } from './emparejar';
+import { fetchAll } from '@/lib/fetch-all';
 
 export interface ResultadoImport { n: number; mensaje: string }
 
@@ -84,15 +86,60 @@ export function idsMaestros(m: Maestros, r: Pick<RefMaestro, 'razon' | 'cliente'
 }
 
 // ───────────── viajes (hoja PRINCIPAL) ─────────────
+type FilaViaje = ReturnType<typeof parsePrincipal>[number] & { claveNatural: string; numeroFinal: string };
+
+/** ¿La base ya tiene la columna id_viaje (migración 0007)? Si no, se sigue importando como antes. */
+async function hayIdViaje(db: SupabaseClient): Promise<boolean> {
+  const r = await db.from('remitos').select('id_viaje').limit(1);
+  return !r.error || !/id_viaje|schema cache|does not exist/i.test(r.error.message);
+}
+
 export async function importarRemitos(libro: Libro, db: SupabaseClient): Promise<ResultadoImport> {
   const rows = parsePrincipal(libro);
-  const sinNumero = rows.filter((r) => !r.numero).length;
+  if (!(await hayIdViaje(db))) return importarRemitosSinId(rows, db);
 
-  // La clave es (número, fecha): el número de remito se reutiliza con el tiempo, no es un ID global.
-  // Los viajes sin número (chofer no lo cargó, obra sin remito, etc.) igual se guardan: se les arma un
-  // identificador estable a partir de sus propios datos ("SR-…"); en la interfaz se muestran como "(sin número)".
-  // Si el archivo trae el ID de la app (exportado desde acá), la fila se identifica por ese ID: así se puede
-  // cambiar el número o la fecha en Excel y reimportar sin duplicar.
+  // Cada viaje se identifica por su ID (columna ID VIAJE): el número de remito y la fecha pueden repetirse.
+  // Los viajes sin número de remito se guardan igual y se muestran como "(sin número)": su número interno es SR-<ID>.
+  const generarSR = hasherSinRemito();
+  const filas: FilaViaje[] = rows.map((r) => {
+    const claveNatural = r.numero ?? generarSR(partesSinRemito(r)); // para reconocer las filas viejas, que no tenían ID
+    return { ...r, claveNatural, numeroFinal: r.numero ?? (r.idViaje ? `SR-${r.idViaje}` : claveNatural) };
+  });
+  // Un ID repetido dentro del archivo sería la misma fila dos veces: gana la última.
+  const porIdViaje = new Map<string, FilaViaje>();
+  const sinId: FilaViaje[] = [];
+  for (const f of filas) { if (f.idViaje) porIdViaje.set(f.idViaje, f); else sinId.push(f); }
+  const unicas = [...porIdViaje.values(), ...sinId];
+
+  const existentes = await fetchAll<Existente>((from, to) =>
+    db.from('remitos').select('id,id_viaje,numero,fecha').order('fecha').order('numero').order('id').range(from, to),
+  );
+  const plan = planificarRemitos(unicas, existentes);
+
+  const maestros = await resolverMaestros(db, unicas);
+  const base = (r: FilaViaje) => ({
+    numero: r.numeroFinal, fecha: r.fecha, ...idsMaestros(maestros, r),
+    camion: r.camion, chofer: r.chofer, cantera: r.cantera,
+    cantidad: r.cantidad, precio: r.precio, total: r.total, neto: r.neto, costo: r.costo,
+  });
+  const act = plan.actualizar;
+  await upsertar(db, 'remitos', act.filter((a) => a.fila.idViaje).map((a) => ({ id: a.dbId, id_viaje: a.fila.idViaje, ...base(a.fila) })), 'id');
+  await upsertar(db, 'remitos', act.filter((a) => !a.fila.idViaje).map((a) => ({ id: a.dbId, ...base(a.fila) })), 'id');
+  await upsertar(db, 'remitos', plan.insertar.filter((f) => f.idViaje).map((f) => ({ id_viaje: f.idViaje, ...base(f) })), 'id_viaje');
+  await upsertar(db, 'remitos', plan.insertar.filter((f) => !f.idViaje).map((f) => base(f)), 'id');
+
+  const sinNumero = unicas.filter((f) => !f.numero).length;
+  const claves = new Map<string, number>();
+  for (const f of unicas) if (f.numero) claves.set(`${f.numero}|${f.fecha}`, (claves.get(`${f.numero}|${f.fecha}`) ?? 0) + 1);
+  const compartidos = [...claves.values()].filter((n) => n > 1).length;
+  const adoptados = act.filter((a) => a.adopta).length;
+  const mensaje = `Remitos: ${unicas.length} viajes (${plan.insertar.length} nuevos, ${act.length} ya estaban${adoptados ? `, ${adoptados} reconocidos por primera vez` : ''}) · ${sinNumero} sin número de remito · ${compartidos} números de remito compartidos entre viajes del mismo día.`;
+  return { n: unicas.length, mensaje };
+}
+
+/** Importación de antes de la migración 0007: el viaje se identifica por (número, fecha). Se usa solo mientras la
+ *  columna id_viaje no exista, para que el sync no se corte entre el despliegue y la migración. */
+async function importarRemitosSinId(rows: ReturnType<typeof parsePrincipal>, db: SupabaseClient): Promise<ResultadoImport> {
   const generarSR = hasherSinRemito();
   type Conv = (typeof rows)[number] & { numero: string };
   const porClave = new Map<string, Conv>();
@@ -101,13 +148,12 @@ export async function importarRemitos(libro: Libro, db: SupabaseClient): Promise
   for (const r of rows) {
     const numero = r.numero ?? generarSR(partesSinRemito(r));
     const fila: Conv = { ...r, numero };
-    if (r.id) { porId.set(r.id, fila); continue; }
+    if (r.idDb) { porId.set(r.idDb, fila); continue; }
     const k = `${numero}|${r.fecha}`;
     if (porClave.has(k)) repetidos++;
     porClave.set(k, fila); // gana la última fila
   }
   const todas = [...porClave.values(), ...porId.values()];
-
   const maestros = await resolverMaestros(db, todas);
   const payload = (r: Conv) => ({
     numero: r.numero, fecha: r.fecha, ...idsMaestros(maestros, r),
@@ -116,9 +162,7 @@ export async function importarRemitos(libro: Libro, db: SupabaseClient): Promise
   });
   await upsertar(db, 'remitos', [...porClave.values()].map(payload), 'numero,fecha');
   await upsertar(db, 'remitos', [...porId.entries()].map(([id, r]) => ({ id, ...payload(r) })), 'id');
-
-  const mensaje = `Remitos: ${todas.length} importados (${sinNumero} sin número propio, guardados igual) · ${repetidos} repetidos (mismo número Y fecha) en la planilla.`;
-  return { n: todas.length, mensaje };
+  return { n: todas.length, mensaje: `Remitos: ${todas.length} importados · ${repetidos} repetidos (mismo número y fecha; falta correr la migración 0007 para guardarlos todos).` };
 }
 
 async function reemplazarSaldos(db: SupabaseClient, fuente: string, saldos: { nombre: string; ventas: number; cobranzas: number; saldo: number }[]) {

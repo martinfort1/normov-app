@@ -46,7 +46,8 @@ function construir<T>(hoja: string, cols: Col<T>[], filas: T[]): Buffer {
 
 // ───────────── viajes · hoja PRINCIPAL ─────────────
 export interface ViajeExp {
-  id: string; numero: string; fecha: string; camion: string | null; chofer: string | null; cantera: string | null;
+  /** id interno de la base; id_viaje es el ID visible (V000123 de la planilla, A000045 de la app) */
+  id: string; id_viaje?: string | null; numero: string; fecha: string; camion: string | null; chofer: string | null; cantera: string | null;
   cantidad: number; precio: number; total: number; neto: number; costo: number;
   clientes: { razon_social: string } | null; obras: { nombre: string } | null; materiales: { nombre: string; unidad: string } | null;
   /** Estado del certificado que contiene el viaje (solo si se pudo consultar) */
@@ -82,7 +83,8 @@ export const COLS_VIAJES: Col<ViajeExp>[] = [
   { h: 'ESTADO', w: 22, tipo: 'texto', v: (r) => (r.certEstado === undefined ? null : ESTADO_VIAJE[r.certEstado ?? ''] ?? 'Realizado') },
   { h: 'COSTO CAMION', w: 13, tipo: 'plata', v: () => null },
   { h: 'cargado', w: 9, tipo: 'texto', v: () => null },
-  { h: 'ID VIAJE', w: 38, tipo: 'texto', v: (r) => r.id },
+  // El ID del viaje; si el viaje todavía no tiene (filas viejas), el id interno, que la importación también reconoce.
+  { h: 'ID VIAJE', w: 14, tipo: 'texto', v: (r) => r.id_viaje ?? r.id },
   { h: 'CERTIFICADO N°', w: 14, tipo: 'texto', v: (r) => (r.certNumero ? String(r.certNumero).padStart(4, '0') : null) },
 ];
 export const exportarViajes = (filas: ViajeExp[]) => construir('PRINCIPAL', COLS_VIAJES, filas);

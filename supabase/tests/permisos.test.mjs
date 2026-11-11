@@ -3,16 +3,9 @@
    No toca ninguna base real. Simula a Supabase con un esquema "auth" mínimo. */
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { PGlite } from '@electric-sql/pglite';
-import { readFileSync, readdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
+import { baseConStubs, aplicar, crearComo } from './helpers.mjs';
 
-const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
-const migraciones = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
-const sql = (f) => readFileSync(path.join(dir, f), 'utf8');
-
-const db = new PGlite();
+let db, como;
 const U = {
   admin: '00000000-0000-0000-0000-0000000000a1',
   lector: '00000000-0000-0000-0000-0000000000a2',   // legacy: rol lector
@@ -23,38 +16,14 @@ const U = {
 };
 let clienteId;
 
-/** Ejecuta consultas como un usuario de la app (rol authenticated, con RLS). */
-async function como(userId, fn) {
-  await db.exec('set role authenticated');
-  await db.query("select set_config('request.jwt.claim.sub', $1, false)", [userId]);
-  try { return await fn(); } finally { await db.exec('reset role'); }
-}
 const q = (texto, params) => db.query(texto, params);
 
 before(async () => {
-  // Simula lo que Supabase ya trae: esquema auth, auth.uid() y los roles.
-  await db.exec(`
-    create schema auth;
-    create table auth.users (id uuid primary key default gen_random_uuid(), email text, raw_user_meta_data jsonb default '{}'::jsonb);
-    create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-    create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
-    grant usage on schema public, auth to anon, authenticated, service_role;
-    alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
-    alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
-
-    -- Simula el almacenamiento de Supabase (storage.buckets, storage.objects y storage.foldername)
-    create schema storage;
-    create table storage.buckets (id text primary key, name text, public boolean default false);
-    create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets(id), name text, created_at timestamptz default now());
-    alter table storage.objects enable row level security;
-    create function storage.foldername(name text) returns text[] language plpgsql as $$
-      declare partes text[]; begin partes := string_to_array(name, '/'); return partes[1:array_length(partes, 1) - 1]; end $$;
-    grant usage on schema storage to anon, authenticated, service_role;
-    grant all on storage.buckets, storage.objects to anon, authenticated, service_role;
-  `);
+  db = await baseConStubs();
+  como = crearComo(db);
 
   // Esquema tal como estaba antes de los permisos (0001..0004)
-  for (const f of migraciones.filter((m) => m < '0005')) await db.exec(sql(f));
+  await aplicar(db, (m) => m < '0005');
 
   // Usuarios que YA existían, con los roles viejos
   for (const [k, id] of Object.entries(U)) await db.query('insert into auth.users (id, email) values ($1, $2)', [id, `${k}@test.com`]);
@@ -75,7 +44,7 @@ before(async () => {
   await q("insert into sync_log (archivo, ok) values ('planilla', true)");
 
   // Ahora la migración nueva
-  for (const f of migraciones.filter((m) => m >= '0005')) await db.exec(sql(f));
+  await aplicar(db, (m) => m >= '0005');
 
   // Permisos finos para los usuarios nuevos
   await q("update profiles set rol = 'operador' where id = $1", [U.viajes]);

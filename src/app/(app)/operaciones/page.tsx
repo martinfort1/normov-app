@@ -17,7 +17,7 @@ import { VerAdjunto } from '@/components/ver-adjunto';
 export const dynamic = 'force-dynamic';
 
 interface Remito {
-  id: string; numero: string; fecha: string; camion: string | null; chofer: string | null; cantera: string | null;
+  id: string; id_viaje?: string | null; numero: string; fecha: string; camion: string | null; chofer: string | null; cantera: string | null;
   cantidad: number; precio: number; total: number; costo: number; neto: number; foto_path: string | null;
   clientes: { razon_social: string } | null;
   obras: { nombre: string } | null;
@@ -40,18 +40,26 @@ export default async function Operaciones({ searchParams }: { searchParams: Prom
 
   let outer: Remito[] = [];
   let error: string | null = null;
+  // El número de remito y la fecha pueden repetirse: el último criterio de orden es el id, para que la paginación sea estable.
+  const columnas = (conIdViaje: boolean): string =>
+    `id,${conIdViaje ? 'id_viaje,' : ''}numero,fecha,camion,chofer,cantera,cantidad,precio,total,costo,neto,foto_path,clientes(razon_social),obras(nombre),materiales(nombre,unidad)`;
+  const leer = (conIdViaje: boolean) => fetchAll<Remito>((from, to) =>
+    supabase.from('remitos').select(columnas(conIdViaje))
+      .gte('fecha', rango.desde).lte('fecha', rango.hasta)
+      .order('fecha', { ascending: false }).order('numero', { ascending: false }).order('id')
+      .range(from, to),
+  );
   try {
-    outer = (await fetchAll((from, to) =>
-      supabase
-        .from('remitos')
-        .select('id,numero,fecha,camion,chofer,cantera,cantidad,precio,total,costo,neto,foto_path,clientes(razon_social),obras(nombre),materiales(nombre,unidad)')
-        .gte('fecha', rango.desde).lte('fecha', rango.hasta)
-        .order('fecha', { ascending: false }).order('numero', { ascending: false })
-        .range(from, to),
-    )) as unknown as Remito[];
+    // Antes de la migración 0007 la columna id_viaje no existe: se muestra igual, sin ID.
+    outer = await leer(true).catch((e: Error) => (/id_viaje/.test(e.message) ? leer(false) : Promise.reject(e)));
   } catch (e) {
     error = e instanceof Error ? e.message : 'Error al consultar los remitos';
   }
+
+  // Viajes que comparten número de remito y fecha con otro: se marcan para poder revisarlos (no es necesariamente un error).
+  const veces = new Map<string, number>();
+  for (const r of outer) if (!r.numero.startsWith('SR-')) veces.set(`${r.numero}|${r.fecha}`, (veces.get(`${r.numero}|${r.fecha}`) ?? 0) + 1);
+  const esRepetido = (r: Remito) => (veces.get(`${r.numero}|${r.fecha}`) ?? 0) > 1;
 
   const enPeriodo = outer.filter((r) => r.fecha >= per.desde && r.fecha <= per.hasta);
   const filtrados = filtrar(enPeriodo, sp, {
@@ -163,13 +171,19 @@ export default async function Operaciones({ searchParams }: { searchParams: Prom
         <h3 style={{ marginBottom: 10 }}>Remitos</h3>
         <table>
           <thead>
-            <tr><th>Fecha</th><th>Remito</th><th>{agrupacion === 'razon' ? 'Razón social' : 'Cliente / obra'}</th><th>Material</th><th>Camión</th><th>Chofer</th>
+            <tr><th>Fecha</th><th>ID</th><th>Remito</th><th>{agrupacion === 'razon' ? 'Razón social' : 'Cliente / obra'}</th><th>Material</th><th>Camión</th><th>Chofer</th>
               <th className="r">Cant.</th><th className="r">Precio</th><th className="r">Total</th><th /></tr>
           </thead>
           <tbody>
             {filtrados.slice(0, 500).map((r) => (
               <tr key={r.id}>
-                <td>{fecha(r.fecha)}</td><td>{remito(r.numero)}</td><td>{campoCliente(r) ?? '—'}</td>
+                <td>{fecha(r.fecha)}</td>
+                <td className="muted" style={{ whiteSpace: 'nowrap', fontSize: 12.5 }}>{r.id_viaje ?? '—'}</td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {remito(r.numero)}{' '}
+                  {esRepetido(r) && <span className="pill warn" title="Hay otro viaje con este mismo número de remito y la misma fecha. Puede ser correcto (un remito para dos viajes) o una carga repetida.">repetido</span>}
+                </td>
+                <td>{campoCliente(r) ?? '—'}</td>
                 <td>{r.materiales?.nombre ?? '—'}</td><td>{r.camion ?? '—'}</td><td>{r.chofer ?? '—'}</td>
                 <td className="r">{num2(r.cantidad)}</td><td className="r">{money(r.precio)}</td><td className="r">{money(r.total)}</td>
                 <td>{r.foto_path && <VerAdjunto path={r.foto_path} etiqueta="Foto" />}</td>

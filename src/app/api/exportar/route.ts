@@ -37,10 +37,14 @@ export async function GET(req: Request) {
       hoja = 'PRINCIPAL';
       // Viajes son miles de filas: sin fechas, se exporta el año en curso.
       desdeUsado = d ?? `${hoyAR().slice(0, 4)}-01-01`; hastaUsado = h ?? hoyAR();
-      const filas = await fetchAll<ViajeExp>((from, to) =>
-        db.from('remitos').select('id,numero,fecha,camion,chofer,cantera,cantidad,precio,total,neto,costo,clientes(razon_social),obras(nombre),materiales(nombre,unidad)')
+      const columnas = (conIdViaje: boolean): string =>
+        `id,${conIdViaje ? 'id_viaje,' : ''}numero,fecha,camion,chofer,cantera,cantidad,precio,total,neto,costo,clientes(razon_social),obras(nombre),materiales(nombre,unidad)`;
+      const leer = (conIdViaje: boolean) => fetchAll<ViajeExp>((from, to) =>
+        db.from('remitos').select(columnas(conIdViaje))
           .gte('fecha', desdeUsado!).lte('fecha', hastaUsado!).order('fecha').order('numero').order('id').range(from, to),
       );
+      // Antes de la migración 0007 la columna id_viaje no existe: se exporta igual, con el id interno en ID VIAJE.
+      const filas = await leer(true).catch((e: Error) => (/id_viaje/.test(e.message) ? leer(false) : Promise.reject(e)));
       if (acceso.puedeVer('certificados')) {
         const est = await fetchAll<{ id: string; cert_numero: number | null; cert_estado: string | null }>((from, to) =>
           db.from('v_remitos_estado').select('id,cert_numero,cert_estado').gte('fecha', desdeUsado!).lte('fecha', hastaUsado!).order('fecha').order('numero').order('id').range(from, to),

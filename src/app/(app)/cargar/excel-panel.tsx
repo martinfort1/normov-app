@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 
 export interface TipoExcel { id: 'viajes' | 'combustible' | 'proveedores' | 'cheques'; titulo: string; hoja: string; rango: boolean }
 
-interface Resumen { filas: number; conId: number; desde: string | null; hasta: string | null; muestra: string[] }
+interface Resumen { filas: number; conId: number; desde: string | null; hasta: string | null; muestra: string[]; avisos?: string[] }
 
 const AYUDA: Record<TipoExcel['id'], string> = {
   viajes: 'Hoja PRINCIPAL de la Planilla NORMOV. Si el archivo viene de una exportación de la app (columna ID VIAJE), las filas se actualizan en lugar de duplicarse, aunque cambies el remito o la fecha.',
@@ -107,6 +107,7 @@ export function ExcelPanel({ exportables, importables, hoy }: { exportables: Tip
             {resumen.desde && <> · del {resumen.desde} al {resumen.hasta}</>}
             {resumen.conId > 0 && <> · {resumen.conId.toLocaleString('es-AR')} se reconocen por ID y se actualizan en su lugar</>}.
             {resumen.muestra.length > 0 && <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>{resumen.muestra.map((m, i) => <li key={i}>{m}</li>)}<li className="muted">…</li></ul>}
+            {(resumen.avisos ?? []).map((a, i) => <p key={i} className="note" style={{ margin: '8px 0 0', color: 'var(--warn)' }}>Aviso: {a}</p>)}
             <div className="row" style={{ marginTop: 10 }}>
               <button type="button" className="primary" onClick={() => enviar('aplicar')} disabled={ocupado}>{ocupado ? 'Importando…' : 'Importar ahora'}</button>
               <button type="button" onClick={() => { setResumen(null); setMsg(null); }} disabled={ocupado}>Cancelar</button>

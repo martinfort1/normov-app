@@ -24,19 +24,24 @@ test('las fechas viajan como fecha de Excel y vuelven al mismo día (sin corrimi
   }
 });
 
-test('viajes: todo vuelve igual, con ID, y los sin remito siguen sin remito', () => {
-  const filas = [viaje({}), viaje({ id: ID2, numero: 'SR-abc123def456', fecha: '2026-02-03', cantidad: 12.5, precio: 0, total: 0, neto: 0, costo: 0, camion: null })];
+test('viajes: todo vuelve igual, con su ID, y los sin remito siguen sin remito', () => {
+  const filas = [viaje({ id_viaje: 'V000123' }), viaje({ id: ID2, id_viaje: 'A000045', numero: 'SR-V000045', fecha: '2026-02-03', cantidad: 12.5, precio: 0, total: 0, neto: 0, costo: 0, camion: null })];
   const out = parsePrincipal(libroDeBuffer(exportarViajes(filas)));
   assert.equal(out.length, 2);
   const [a, b] = out;
   assert.deepEqual(
-    { id: a.id, numero: a.numero, fecha: a.fecha, cliente: a.cliente, razon: a.razon, camion: a.camion, chofer: a.chofer, cantera: a.cantera, material: a.material, cantidad: a.cantidad, precio: a.precio, neto: a.neto, total: a.total, costo: a.costo, unidad: a.unidad },
-    { id: ID1, numero: '4094', fecha: '2026-01-26', cliente: 'VIENTO SUR LOTE H14', razon: 'VIENTO SUR SRL', camion: 'AC124BA', chofer: 'PEREZ JUAN', cantera: 'TIPAS', material: 'PIEDRA 1-3', cantidad: 6, precio: 15000, neto: 90000, total: 108900, costo: 30000, unidad: 'm3' },
+    { idViaje: a.idViaje, idDb: a.idDb, numero: a.numero, fecha: a.fecha, cliente: a.cliente, razon: a.razon, camion: a.camion, chofer: a.chofer, cantera: a.cantera, material: a.material, cantidad: a.cantidad, precio: a.precio, neto: a.neto, total: a.total, costo: a.costo, unidad: a.unidad },
+    { idViaje: 'V000123', idDb: null, numero: '4094', fecha: '2026-01-26', cliente: 'VIENTO SUR LOTE H14', razon: 'VIENTO SUR SRL', camion: 'AC124BA', chofer: 'PEREZ JUAN', cantera: 'TIPAS', material: 'PIEDRA 1-3', cantidad: 6, precio: 15000, neto: 90000, total: 108900, costo: 30000, unidad: 'm3' },
   );
-  assert.equal(b.id, ID2);
+  assert.equal(b.idViaje, 'A000045');
   assert.equal(b.numero, null, 'sin número de remito: la columna REMITO sale vacía');
   assert.equal(b.camion, null);
   assert.equal(b.cantidad, 12.5);
+});
+
+test('dos viajes con el mismo remito y fecha se exportan y se leen como dos viajes con ID distinto', () => {
+  const out = parsePrincipal(libroDeBuffer(exportarViajes([viaje({ id_viaje: 'V000010' }), viaje({ id: ID2, id_viaje: 'V000011' })])));
+  assert.deepEqual(out.map((r) => [r.numero, r.fecha, r.idViaje]), [['4094', '2026-01-26', 'V000010'], ['4094', '2026-01-26', 'V000011']]);
 });
 
 test('viajes: el Excel tiene las columnas de la planilla y el estado del certificado', () => {
@@ -90,7 +95,8 @@ test('combustible: vuelve igual y los "—" quedan como en la planilla', () => {
   assert.equal(sha(partesCarga(r)), sha(partesCarga({ fecha: '2026-06-02', remito: '', patente: 'AB123CD', litros: 180.5, tipo: '—', estacion: '—' })));
 });
 
-test('un ID que no es de la app (el de la planilla) se ignora', () => {
-  const libro = libroDeBuffer(exportarViajes([viaje({ id: 'V-000123' })]));
-  assert.equal(parsePrincipal(libro)[0].id, null);
+test('sin ID de viaje, el Excel lleva el id interno, y la importación lo reconoce como tal', () => {
+  const [r] = parsePrincipal(libroDeBuffer(exportarViajes([viaje({ id: ID1, id_viaje: null })])));
+  assert.equal(r.idViaje, null);
+  assert.equal(r.idDb, ID1);
 });

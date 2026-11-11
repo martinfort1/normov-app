@@ -112,8 +112,10 @@ function locate(libro: Libro, name: string, req: string[]): Located {
 
 // ───────────── Planilla NORMOV 2026 ─────────────
 export interface RemitoRow {
-  /** uuid de la fila en la app, si el archivo vino de una exportación de la app (columna ID VIAJE) */
-  id: string | null;
+  /** ID del viaje (columna ID VIAJE): V000123 en la planilla, A000045 si lo cargó la app. Es lo que identifica al viaje. */
+  idViaje: string | null;
+  /** Si la columna trae un uuid (exportaciones anteriores de la app), el id interno del viaje en la base */
+  idDb: string | null;
   numero: string | null; fecha: string; cliente: string | null; razon: string | null; camion: string | null;
   chofer: string | null; cantera: string | null; material: string | null; unidad: Unidad;
   cantidad: number; precio: number; total: number; neto: number; costo: number;
@@ -139,8 +141,10 @@ export function parsePrincipal(libro: Libro): RemitoRow[] {
     const cantidad = num(r[c.m3]);
     const neto = (c.neto >= 0 ? num(r[c.neto]) : 0) || total;
     const costo = c.costo >= 0 ? num(r[c.costo]) : c.costoU >= 0 ? num(r[c.costoU]) * cantidad : 0;
+    const idCrudo = c.idv >= 0 ? clean(r[c.idv]).toUpperCase() : '';
+    const idDb = uuidDe(idCrudo);
     out.push({
-      id: c.idv >= 0 ? uuidDe(r[c.idv]) : null,
+      idViaje: idCrudo && !idDb ? idCrudo : null, idDb,
       numero: remitoKey(r[c.remito]), fecha, cliente: label(r[c.cliente]), razon: label(r[c.razon]),
       camion: label(r[c.camion]), chofer: label(r[c.chofer]), cantera: label(r[c.cantera]),
       material, unidad: unitOf(material), cantidad, precio: num(r[c.precio]), total: total || neto, neto, costo,

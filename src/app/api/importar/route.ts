@@ -13,7 +13,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-interface Resumen { filas: number; conId: number; fechas: (string | null)[]; muestra: string[] }
+interface Resumen { filas: number; conId: number; fechas: (string | null)[]; muestra: string[]; avisos?: string[] }
 interface Tipo { modulo: Modulo; hoja: string; resumir: (l: Libro) => Resumen; importar: (l: Libro, db: SupabaseClient) => Promise<ResultadoImport> }
 
 const TIPOS: Record<string, Tipo> = {
@@ -21,7 +21,15 @@ const TIPOS: Record<string, Tipo> = {
     modulo: 'viajes', hoja: 'PRINCIPAL', importar: importarRemitos,
     resumir: (l) => {
       const f = parsePrincipal(l);
-      return { filas: f.length, conId: f.filter((r) => r.id).length, fechas: f.map((r) => r.fecha),
+      // Viajes distintos (otro ID) que comparten número de remito y fecha: se importan igual, pero se avisa.
+      const claves = new Map<string, number>();
+      for (const r of f) if (r.numero) claves.set(`${r.numero}|${r.fecha}`, (claves.get(`${r.numero}|${r.fecha}`) ?? 0) + 1);
+      const compartidos = [...claves.values()].filter((n) => n > 1);
+      const sinId = f.filter((r) => !r.idViaje && !r.idDb).length;
+      const avisos: string[] = [];
+      if (compartidos.length) avisos.push(`${compartidos.length} números de remito se repiten con la misma fecha en ${compartidos.reduce((a, n) => a + n, 0)} viajes. Se importan todos; si alguno es una carga duplicada, corregilo en el archivo antes de importar.`);
+      if (sinId) avisos.push(`${sinId} viajes no traen ID VIAJE: se reconocen por número de remito y fecha, y los que no existan se crean como nuevos.`);
+      return { filas: f.length, conId: f.filter((r) => r.idViaje || r.idDb).length, fechas: f.map((r) => r.fecha), avisos,
         muestra: f.slice(0, 3).map((r) => `${fmtFecha(r.fecha)} · remito ${fmtRemito(r.numero)} · ${r.razon ?? r.cliente ?? '—'} · ${r.material ?? '—'} · ${r.cantidad}`) };
     },
   },
@@ -76,7 +84,7 @@ export async function POST(req: Request) {
     if (!r.filas) return NextResponse.json({ error: `No encontré filas para importar en la hoja ${tipo.hoja}.` }, { status: 400 });
     if (modo === 'simular') {
       const fechas = r.fechas.filter((x): x is string => !!x).sort();
-      return NextResponse.json({ filas: r.filas, conId: r.conId, desde: fechas[0] ? fmtFecha(fechas[0]) : null, hasta: fechas.length ? fmtFecha(fechas[fechas.length - 1]) : null, muestra: r.muestra });
+      return NextResponse.json({ filas: r.filas, conId: r.conId, desde: fechas[0] ? fmtFecha(fechas[0]) : null, hasta: fechas.length ? fmtFecha(fechas[fechas.length - 1]) : null, muestra: r.muestra, avisos: r.avisos ?? [] });
     }
     const resultado = await tipo.importar(libro, await createClient());
     for (const ruta of ['/operaciones', '/combustible', '/proveedores', '/cheques', '/cargar']) revalidatePath(ruta);

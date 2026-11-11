@@ -40,14 +40,39 @@ function FormCarga({ carpeta, campos, inicial, mantener, opciones, alCambiar, re
   const [claveArchivo, setClaveArchivo] = useState(0);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [pending, start] = useTransition();
+  /** Aviso del servidor antes de guardar (ej.: "ya hay un viaje con este remito y fecha"). El adjunto ya subido espera la decisión. */
+  const [confirmacion, setConfirmacion] = useState<{ texto: string; ruta: string | null } | null>(null);
   const tocados = useRef<Set<string>>(new Set());
 
+  /** Si se cancela o se cambia algo mientras había un aviso pendiente, el adjunto subido no se usó: se borra. */
+  function soltarConfirmacion() {
+    if (confirmacion?.ruta) void descartarAdjunto(confirmacion.ruta);
+    setConfirmacion(null);
+  }
+
   function cambiar(k: string, nuevo: string) {
+    if (confirmacion) soltarConfirmacion();
     tocados.current.add(k);
     setV((prev) => {
       const sig = { ...prev, [k]: nuevo };
       return alCambiar ? alCambiar(sig, k, nuevo, tocados.current) : sig;
     });
+  }
+
+  /** Guarda (o pide confirmar). `ruta` es el adjunto ya subido, si hay. */
+  async function guardarYTerminar(ruta: string | null, confirmarRepetido: boolean) {
+    const r = await guardar({ valores: v, fotoPath: ruta, confirmarRepetido });
+    if (r.confirmar) { setConfirmacion({ texto: r.confirmar, ruta }); return; }
+    if (r.error) {
+      if (ruta) await descartarAdjunto(ruta);
+      setMsg({ ok: false, texto: r.error });
+      return;
+    }
+    setConfirmacion(null);
+    setMsg({ ok: true, texto: r.mensaje ?? 'Guardado.' });
+    setV(Object.fromEntries(Object.entries(inicial).map(([k, val]) => [k, mantener.includes(k) ? v[k] ?? val : val])));
+    tocados.current = new Set();
+    setArchivo(null); setClaveArchivo((c) => c + 1);
   }
 
   function enviar(ev: React.FormEvent) {
@@ -59,17 +84,14 @@ function FormCarga({ carpeta, campos, inicial, mantener, opciones, alCambiar, re
       let ruta: string | null = null;
       try { if (archivo) ruta = await subirAdjunto(archivo, carpeta); }
       catch (x) { setMsg({ ok: false, texto: x instanceof Error ? x.message : 'No se pudo subir el archivo.' }); return; }
-      const r = await guardar({ valores: v, fotoPath: ruta });
-      if (r.error) {
-        if (ruta) await descartarAdjunto(ruta);
-        setMsg({ ok: false, texto: r.error });
-        return;
-      }
-      setMsg({ ok: true, texto: r.mensaje ?? 'Guardado.' });
-      setV(Object.fromEntries(Object.entries(inicial).map(([k, val]) => [k, mantener.includes(k) ? v[k] ?? val : val])));
-      tocados.current = new Set();
-      setArchivo(null); setClaveArchivo((c) => c + 1);
+      await guardarYTerminar(ruta, false);
     });
+  }
+
+  function cargarIgual() {
+    if (!confirmacion) return;
+    const ruta = confirmacion.ruta;
+    start(async () => { await guardarYTerminar(ruta, true); });
   }
 
   return (
@@ -112,7 +134,7 @@ function FormCarga({ carpeta, campos, inicial, mantener, opciones, alCambiar, re
 
         <div className="campo full">
           <label htmlFor={`f-${carpeta}-adjunto`}>Adjuntar foto o comprobante <span className="muted" style={{ textTransform: 'none', letterSpacing: 0 }}>(opcional, queda enlazado a este registro)</span></label>
-          <input key={claveArchivo} id={`f-${carpeta}-adjunto`} type="file" accept="image/*,application/pdf" onChange={(e) => setArchivo(e.target.files?.[0] ?? null)} />
+          <input key={claveArchivo} id={`f-${carpeta}-adjunto`} type="file" accept="image/*,application/pdf" onChange={(e) => { if (confirmacion) soltarConfirmacion(); setArchivo(e.target.files?.[0] ?? null); }} />
           {archivo && <span className="ayuda">{archivo.name} · {Math.round(archivo.size / 1024)} KB{archivo.type.startsWith('image/') ? ' · se achica antes de subir' : ''}</span>}
           <Vista archivo={archivo} />
         </div>
@@ -120,7 +142,16 @@ function FormCarga({ carpeta, campos, inicial, mantener, opciones, alCambiar, re
 
       {resumen && <div className="cresumen">{resumen(v)}</div>}
       {msg && <div className={`banner ${msg.ok ? 'ok' : 'err'}`} role="status">{msg.texto}</div>}
-      <div className="row"><button type="submit" className="primary" disabled={pending}>{pending ? 'Guardando…' : boton}</button></div>
+      {confirmacion && (
+        <div className="banner" role="alert">
+          <strong>Atención:</strong> {confirmacion.texto}
+          <div className="row" style={{ marginTop: 8 }}>
+            <button type="button" className="primary" onClick={cargarIgual} disabled={pending}>{pending ? 'Guardando…' : 'Cargar igual'}</button>
+            <button type="button" onClick={soltarConfirmacion} disabled={pending}>Cancelar</button>
+          </div>
+        </div>
+      )}
+      <div className="row"><button type="submit" className="primary" disabled={pending || !!confirmacion}>{pending ? 'Guardando…' : boton}</button></div>
     </form>
   );
 }

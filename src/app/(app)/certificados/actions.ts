@@ -45,9 +45,13 @@ export async function guardarCertificado(p: CrearCertificadoPayload): Promise<{ 
 
   if (error) {
     if (error.code === '23505') {
-      // El índice es compuesto (remito_numero, fecha): el mismo número puede repetirse en otra fecha sin problema.
-      const m = error.message.match(/\(remito_numero, fecha\)=\(([^,]+), ([^)]+)\)/);
-      const detalle = m ? `El remito ${m[1]} del ${m[2]}` : 'Uno de estos remitos';
+      // Postgres informa la clave en `details` (a veces en `message`). Los viajes de la planilla se identifican por
+      // remito_id; los agregados a mano, por (remito_numero, fecha).
+      const texto = `${error.message} ${error.details ?? ''}`;
+      const porId = texto.match(/\(remito_id\)=\(([0-9a-f-]{36})\)/i);
+      const porNum = texto.match(/\(remito_numero, fecha\)=\(([^,]+), ([^)]+)\)/);
+      const item = porId ? p.items.find((i) => i.remito_id === porId[1]) : null;
+      const detalle = item ? `El remito ${item.remito_numero} del ${item.fecha}` : porNum ? `El remito ${porNum[1]} del ${porNum[2]}` : 'Uno de estos remitos';
       return { error: `${detalle} ya está en otro certificado vigente. Quitalo y guardá de nuevo.`, numero: null };
     }
     return { error: error.message, numero: null };

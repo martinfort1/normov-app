@@ -7,8 +7,9 @@ import { sha, partesMov, partesCheque, partesCarga, partesSinRemito, siguienteLi
 import { clean, up, remitoKey, unitOf, isTruck } from '@/lib/sheets/parsers';
 
 export type Valores = Record<string, string>;
-export interface EntradaCarga { valores: Valores; fotoPath: string | null }
-export type Resultado = { error: string | null; mensaje?: string };
+export interface EntradaCarga { valores: Valores; fotoPath: string | null; confirmarRepetido?: boolean }
+/** `confirmar` trae un aviso (no se guardó nada todavía): si la persona confirma, se vuelve a enviar con confirmarRepetido. */
+export type Resultado = { error: string | null; mensaje?: string; confirmar?: string };
 
 const err = (error: string): Resultado => ({ error });
 const redondear = (n: number) => Math.round(n * 100) / 100;
@@ -49,28 +50,48 @@ export async function guardarViaje(e: EntradaCarga): Promise<Resultado> {
   const costo = costoUnit > 0 ? redondear(costoUnit * cantidad) : 0;
 
   const supabase = await createClient();
-  let numeroFinal = remitoKey(v.remito);
+  const remitoIn = remitoKey(v.remito);
+
+  // Advertencia (no bloqueo): ya hay un viaje con el mismo número de remito y fecha. Dos viajes pueden compartirlos
+  // (un remito para dos viajes), pero también puede ser una carga repetida: lo decide quien carga.
+  if (remitoIn && !e.confirmarRepetido) {
+    const { data } = await supabase.from('remitos').select('*').eq('numero', remitoIn).eq('fecha', fecha).limit(5);
+    if (data?.length) {
+      const ids = data.map((r) => r.id_viaje).filter(Boolean).join(', ');
+      return { error: null, confirmar: `Ya hay ${data.length === 1 ? 'un viaje' : `${data.length} viajes`} con el remito ${remitoIn} en esa fecha${ids ? ` (${ids})` : ''}. ¿Es otro viaje y querés cargarlo igual?` };
+    }
+  }
+
+  // Todo viaje cargado desde la app recibe su ID (A000001…). Antes de la migración 0007 todavía no existe: se sigue sin ID.
+  const nuevoId = await supabase.rpc('nuevo_id_viaje_app');
+  const idViaje = !nuevoId.error && typeof nuevoId.data === 'string' ? nuevoId.data : null;
+
+  let numeroFinal = remitoIn;
   if (!numeroFinal) {
-    // Sin remito: misma clave que arma el sync para los viajes sin número, así no se duplica si también está en la planilla.
-    const base12 = sha(partesSinRemito({ fecha, cliente, razon, material, cantidad, precio, camion, chofer, cantera })).slice(0, 12);
-    const { data } = await supabase.from('remitos').select('numero').eq('fecha', fecha).like('numero', `SR-${base12}%`);
-    numeroFinal = siguienteLibreSR(base12, (data ?? []).map((r) => r.numero as string));
+    if (idViaje) numeroFinal = `SR-${idViaje}`;
+    else {
+      // Sin ID todavía: misma clave que arma el sync para los viajes sin número, así no se duplica si también está en la planilla.
+      const base12 = sha(partesSinRemito({ fecha, cliente, razon, material, cantidad, precio, camion, chofer, cantera })).slice(0, 12);
+      const { data } = await supabase.from('remitos').select('numero').eq('fecha', fecha).like('numero', `SR-${base12}%`);
+      numeroFinal = siguienteLibreSR(base12, (data ?? []).map((r) => r.numero as string));
+    }
   }
   try {
     const maestros = await resolverMaestros(supabase, [{ razon, cliente, material, unidad }]);
     const { error } = await supabase.from('remitos').insert({
+      ...(idViaje ? { id_viaje: idViaje } : {}),
       numero: numeroFinal, fecha, ...idsMaestros(maestros, { razon, cliente, material }), camion, chofer, cantera,
       cantidad, precio, total, neto, costo, origen: 'manual', foto_path: e.fotoPath, creado_por: p.a.userId, autor: p.a.nombre,
     });
     if (error) {
-      if (error.code === '23505') return err(`Ya hay un viaje con el remito ${numeroFinal} en esa fecha. Si es un segundo viaje con el mismo remito, avisalo: hoy la base no admite dos viajes con el mismo número y fecha.`);
+      if (error.code === '23505') return err(`Ya hay un viaje con el remito ${numeroFinal} en esa fecha. Para cargar dos viajes con el mismo remito y fecha hay que correr antes la migración 0007_id_viaje.sql en Supabase.`);
       return err(msgDb(error.message));
     }
   } catch (x) {
     return err(msgDb(x instanceof Error ? x.message : 'No se pudo guardar.'));
   }
   refrescar();
-  return { error: null, mensaje: `Viaje cargado${numeroFinal.startsWith('SR-') ? ' (sin número de remito)' : ` · remito ${numeroFinal}`}.` };
+  return { error: null, mensaje: `Viaje cargado${idViaje ? ` · ID ${idViaje}` : ''}${numeroFinal.startsWith('SR-') ? ' · sin número de remito' : ` · remito ${numeroFinal}`}.` };
 }
 
 // ───────────── combustible ─────────────

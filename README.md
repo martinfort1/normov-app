@@ -17,6 +17,7 @@ Chofer → WhatsApp → Admin carga en Sheets → Apps Script (automático) → 
 | Migraciones 0002 (certificados atómicos), 0003 (clave de remito por fecha) | corridas en producción |
 | Migración 0004 (`sync_log`, pantalla Sistema) | **falta correr** si la pantalla Sistema avisa que falta la tabla; va ANTES que la 0005 |
 | Migración 0005 (permisos por usuario y por sección, pantalla Usuarios) | corrida |
+| Migración 0007 (ID único por viaje; permite remitos repetidos) | **nueva — falta correr**, después de 0005 y 0006 y de desplegar el código; luego `sincronizar` la Planilla |
 | Migración 0006 (carga de datos: columnas nuevas, quién cargó, adjuntos) | **nueva — falta correr**, después de la 0005 (el sync sigue andando sin ella; Cargar datos no funciona hasta correrla) |
 | Importador de planillas (.xlsx) | respaldo manual; el sync automático ya cubre las tres planillas |
 | Login con email y contraseña | funcionando, en producción (Vercel) |
@@ -106,7 +107,8 @@ Listo: desde ahí, los cambios en cada planilla llegan solos a la base, sin que 
 - **El endpoint `/api/sync` es la puerta de entrada desde afuera.** Solo acepta pedidos con el `SYNC_SECRET` correcto; guardalo como guardarías una contraseña (no lo subas a GitHub, ya está en `.gitignore` por estar en `.env.local`).
 - **Tamaño:** cada sync manda la hoja entera. Con el volumen actual de NORMOV no debería haber problema, pero si algún día una hoja crece mucho (varias decenas de miles de filas), puede llegar a chocar con el límite de tamaño de pedido de Vercel; en ese caso habría que mandar solo las filas nuevas en vez de la hoja completa.
 
-- **Remitos:** la clave es (número, fecha) — el número de remito se reutiliza con el tiempo, no es un identificador global. Si la misma combinación número+fecha se repite dentro de la planilla, gana la última fila. Los viajes sin número propio se guardan igual, con una clave interna ("SR-…") armada a partir de sus otros datos; en la interfaz se muestran como "(sin número)" y no entran como candidatos a certificar salvo que se tilde esa opción explícitamente al armar el certificado.
+- **Remitos / viajes:** cada viaje tiene su propio **ID** (columna `ID VIAJE` de la planilla, `V000123`; los cargados desde la app reciben `A000001…`). El número de remito y la fecha ya no identifican nada: pueden repetirse y todos los viajes se conservan (la interfaz marca "repetido" como advertencia; evitar duplicados es responsabilidad de quien carga). Los viajes sin número se muestran como "(sin número)" y no entran como candidatos a certificar salvo que se tilde esa opción al armar el certificado. Cada viaje puede estar en un solo certificado vigente.
+- **Orden de despliegue de la migración 0007 (ID de viaje):** primero subir el código (funciona antes y después de la migración), después correr `0007_id_viaje.sql`, y por último ejecutar `sincronizar` de la Planilla: esa primera vez los viajes viejos adoptan su ID y se crean los que faltaban.
 - **Borrados:** una fila que se borra de la planilla no se borra de la base (el importador solo agrega y actualiza).
 - **Cheques y movimientos:** se identifican por un hash del contenido. Si se corrige en la planilla un importe o una fecha, el importador lo ve como una fila nueva y deja la anterior. Los cambios de *estado* de un cheque sí se actualizan, porque el estado no entra en el hash. Es una limitación de la etapa puente que desaparece cuando la carga pase a la app.
 - **Semáforo de cheques:** "por vencer" = 7 días. Es una suposición mía; no la copié del artifact.

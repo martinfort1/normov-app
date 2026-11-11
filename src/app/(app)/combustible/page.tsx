@@ -21,7 +21,7 @@ export default async function Combustible({ searchParams }: { searchParams: Prom
   const [cargasRes, precioRes] = await Promise.all([
     fetchAll<Carga>((from, to) =>
       supabase.from('cargas_combustible').select('fecha,patente,es_camion,litros,tipo,estacion,chofer')
-        .gte('fecha', per.desde).lte('fecha', per.hasta).order('fecha', { ascending: false }).range(from, to),
+        .gte('fecha', per.desde).lte('fecha', per.hasta).order('fecha', { ascending: false }).order('id').range(from, to),
     ).then((rows) => ({ rows, error: null as string | null })).catch((e) => ({ rows: [] as Carga[], error: e.message as string })),
     supabase.from('precios_combustible').select('precio').order('vigente_desde', { ascending: false }).limit(1).maybeSingle(),
   ]);
