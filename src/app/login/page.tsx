@@ -10,7 +10,8 @@ export default function Login() {
   const [cargando, setCargando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   useEffect(() => {
-    if (new URLSearchParams(location.search).get('error') === 'enlace') setError('El link venció o se abrió en otro navegador. Pedí uno nuevo con "Olvidé mi contraseña".');
+    // Supabase informa los errores del link en el hash (#error=...) o en nuestro ?error=enlace.
+    if (new URLSearchParams(location.search).get('error') === 'enlace' || /error_code=otp_expired|error=access_denied/.test(location.hash)) setError('El link venció o se abrió en otro navegador. Pedí uno nuevo con "Olvidé mi contraseña".');
   }, []);
 
   async function entrarConEmail(e: React.FormEvent<HTMLFormElement>) {
