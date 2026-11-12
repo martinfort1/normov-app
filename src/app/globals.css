@@ -169,3 +169,29 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   .wrap { max-width: none; padding: 0; }
   .panel { border: 0; box-shadow: none; padding: 0; }
 }
+
+/* ───────────── Pedidos (tablero) ───────────── */
+.kanban { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.kcol { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-height: 160px; display: grid; gap: 10px; align-content: start; }
+.kcol.over { border-color: var(--bronze); background: var(--bronze-soft); }
+.kcol-h { display: flex; align-items: center; justify-content: space-between; }
+.kcol-h h2 { margin: 0; font-size: 16px; }
+.kcard { background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 12px; box-shadow: var(--shadow); display: grid; gap: 6px; }
+.kcard[draggable="true"] { cursor: grab; }
+.kcard-top { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.kcard-cli { font-weight: 600; font-size: 15px; }
+.kitems { width: 100%; font-size: 13px; border-collapse: collapse; }
+.kitems th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; text-align: left; padding: 2px 4px; }
+.kitems th.r, .kitems td.r { text-align: right; }
+.kitems td { padding: 3px 4px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.kprog { display: flex; align-items: center; gap: 8px; }
+.kprog .bar { background: var(--line); border-radius: 3px; }
+.kacts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.modal-bg { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); display: grid; place-items: center; padding: 16px; z-index: 50; }
+.modal { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; width: min(640px, 100%); max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow); }
+.modal-h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
+.modal-h h2 { margin: 0; font-size: 17px; }
+.fld { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.vlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.vlist li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; }
+@media (max-width: 900px) { .kanban { grid-template-columns: 1fr; } }

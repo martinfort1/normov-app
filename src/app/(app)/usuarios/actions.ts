@@ -26,6 +26,15 @@ function filasPermisos(userId: string, niveles: Partial<Record<Modulo, Nivel>>) 
     return { user_id: userId, modulo: m.key, nivel: n && NIVELES_OK.includes(n) ? n : 'ninguno' };
   });
 }
+/** Guarda los permisos. Si todavía no se corrió la migración 0008 (la base no conoce la sección "pedidos"), se guardan
+ *  las demás para no bloquear la pantalla Usuarios. */
+async function guardarPermisos(supabase: Awaited<ReturnType<typeof createClient>> | ReturnType<typeof crearClienteAdmin>, filas: ReturnType<typeof filasPermisos>) {
+  const r = await supabase.from('permisos').upsert(filas, { onConflict: 'user_id,modulo' });
+  if (r.error && /modulo_app/.test(r.error.message)) {
+    return supabase.from('permisos').upsert(filas.filter((f) => f.modulo !== 'pedidos'), { onConflict: 'user_id,modulo' });
+  }
+  return r;
+}
 function nivelesDePreset(p: Preset): Record<Modulo, Nivel> {
   const n: Nivel = p === 'completo' ? 'escritura' : p === 'lectura' ? 'lectura' : 'ninguno';
   return Object.fromEntries(MODULOS.map((m) => [m.key, n])) as Record<Modulo, Nivel>;
@@ -43,7 +52,7 @@ export async function guardarUsuario(input: { id: string; nombre: string; estado
     if (error) return { error: error.message };
     if (!data?.length) return { error: 'No se encontró el usuario.' };
 
-    const { error: e2 } = await supabase.from('permisos').upsert(filasPermisos(input.id, input.niveles), { onConflict: 'user_id,modulo' });
+    const { error: e2 } = await guardarPermisos(supabase, filasPermisos(input.id, input.niveles));
     if (e2) return { error: e2.message };
     revalidatePath('/usuarios');
     return { error: null };
@@ -71,7 +80,7 @@ export async function crearUsuario(input: { nombre: string; email: string; passw
     const activo = input.preset !== 'ninguno';
     const { error: e1 } = await db.from('profiles').update({ nombre, rol: activo ? 'operador' : 'sin_acceso' }).eq('id', id);
     if (e1) return { error: e1.message };
-    const { error: e2 } = await db.from('permisos').upsert(filasPermisos(id, nivelesDePreset(input.preset)), { onConflict: 'user_id,modulo' });
+    const { error: e2 } = await guardarPermisos(db, filasPermisos(id, nivelesDePreset(input.preset)));
     if (e2) return { error: e2.message };
     revalidatePath('/usuarios');
     return { error: null };

@@ -15,6 +15,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     pendientesCert = count ?? 0;
   }
 
+  // Pedidos pendientes (si todavía no se corrieron las migraciones 0008/0009, la consulta falla y queda en 0)
+  let pendientesPedidos = 0;
+  if (acceso.activo && acceso.puedeVer('pedidos')) {
+    const supabase = await createClient();
+    const { count, error } = await supabase.from('pedidos').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente');
+    pendientesPedidos = error ? 0 : count ?? 0;
+  }
+
   return (
     <>
       <header className="top">
@@ -32,7 +40,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="banner">Tu cuenta ({acceso.email}) todavía no tiene acceso. Pedile a un administrador que te habilite.</div>
         </main>
       ) : (
-        <ShellClient pendientesCert={pendientesCert} visibles={rutasVisibles(acceso)}>{children}</ShellClient>
+        <ShellClient pendientesCert={pendientesCert} pendientesPedidos={pendientesPedidos} visibles={rutasVisibles(acceso)}>{children}</ShellClient>
       )}
     </>
   );

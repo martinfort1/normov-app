@@ -17,6 +17,7 @@ Chofer → WhatsApp → Admin carga en Sheets → Apps Script (automático) → 
 | Migraciones 0002 (certificados atómicos), 0003 (clave de remito por fecha) | corridas en producción |
 | Migración 0004 (`sync_log`, pantalla Sistema) | **falta correr** si la pantalla Sistema avisa que falta la tabla; va ANTES que la 0005 |
 | Migración 0005 (permisos por usuario y por sección, pantalla Usuarios) | corrida |
+| Migraciones 0008 y 0009 (sección **Pedidos**: tablero Pendientes / Realizado, vínculo con viajes) | **nuevas — falta correr, en ese orden** (la 0008 sola, después la 0009). Los usuarios existentes heredan su nivel de Viajes. Hace falta además la 0007 |
 | Migración 0007 (ID único por viaje; permite remitos repetidos) | **nueva — falta correr**, después de 0005 y 0006 y de desplegar el código; luego `sincronizar` la Planilla |
 | Migración 0006 (carga de datos: columnas nuevas, quién cargó, adjuntos) | **nueva — falta correr**, después de la 0005 (el sync sigue andando sin ella; Cargar datos no funciona hasta correrla) |
 | Importador de planillas (.xlsx) | respaldo manual; el sync automático ya cubre las tres planillas |

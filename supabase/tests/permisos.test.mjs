@@ -55,9 +55,9 @@ before(async () => {
 
 test('los usuarios que ya existían conservan su acceso (lector: lectura, operador: escritura)', async () => {
   const lec = await q('select count(*)::int n, bool_and(nivel = $2) ok from permisos where user_id = $1', [U.lector, 'lectura']);
-  assert.equal(lec.rows[0].n, 7); assert.equal(lec.rows[0].ok, true);
+  assert.equal(lec.rows[0].n, 8); assert.equal(lec.rows[0].ok, true); // 7 secciones de la 0005 + Pedidos (0009, hereda Viajes)
   const ope = await q('select count(*)::int n, bool_and(nivel = $2) ok from permisos where user_id = $1', [U.operador, 'escritura']);
-  assert.equal(ope.rows[0].n, 7); assert.equal(ope.rows[0].ok, true);
+  assert.equal(ope.rows[0].n, 8); assert.equal(ope.rows[0].ok, true);
   const adm = await q('select count(*)::int n from permisos where user_id = $1', [U.admin]);
   assert.equal(adm.rows[0].n, 0, 'el admin no necesita filas: entra por su rol');
 });

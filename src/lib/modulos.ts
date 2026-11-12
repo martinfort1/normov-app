@@ -4,6 +4,7 @@
 /** Módulos sobre los que se dan permisos. Cada uno protege sus tablas en la base (ver 0005_permisos.sql). */
 export const MODULOS = [
   { key: 'viajes', label: 'Viajes (Operaciones)', ruta: '/operaciones' },
+  { key: 'pedidos', label: 'Pedidos', ruta: '/pedidos' },
   { key: 'combustible', label: 'Combustible', ruta: '/combustible' },
   { key: 'certificados', label: 'Certificados', ruta: '/certificados' },
   { key: 'clientes', label: 'Saldos de clientes', ruta: '/clientes' },

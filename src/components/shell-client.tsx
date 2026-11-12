@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 /* Íconos porteados del tablero de FRAN (mismo trazo, mismo viewBox). */
 const ICO: Record<string, string> = {
   viajes: '<path d="M1 4.5h8.5v6H1zM9.5 6.5h3l2 2v2h-5z"/><circle cx="4" cy="12" r="1.3"/><circle cx="11.5" cy="12" r="1.3"/>',
+  ped: '<rect x="2" y="2" width="5" height="12" rx="1"/><rect x="9" y="2" width="5" height="7" rx="1"/>',
   fuel: '<path d="M2.5 14V3a1 1 0 0 1 1-1H7a1 1 0 0 1 1 1v11M1.5 14h8M3 6h4"/><path d="M10 6.5h1.8a1 1 0 0 1 1 1V11a1 1 0 0 0 2 0V7L13 5"/>',
   cert: '<path d="M3.5 1.5h6l3 3v10h-9z"/><path d="M9.5 1.5v3h3M5.5 8h5M5.5 10.5h3.5"/>',
   cli: '<circle cx="8" cy="5" r="2.6"/><path d="M2.8 14c0-2.7 2.3-4.4 5.2-4.4s5.2 1.7 5.2 4.4"/>',
@@ -29,7 +30,7 @@ interface Group { titulo: string; items: Item[] }
 
 type Modo = 'open' | 'mini' | 'off';
 
-export function ShellClient({ pendientesCert, visibles, children }: { pendientesCert: number; visibles: string[]; children: React.ReactNode }) {
+export function ShellClient({ pendientesCert, pendientesPedidos = 0, visibles, children }: { pendientesCert: number; pendientesPedidos?: number; visibles: string[]; children: React.ReactNode }) {
   const pathname = usePathname();
   const [modo, setModo] = useState<Modo>('open');
   const [drawer, setDrawer] = useState(false);
@@ -62,6 +63,7 @@ export function ShellClient({ pendientesCert, visibles, children }: { pendientes
   const GROUPS: Group[] = [
     { titulo: 'Operaciones', items: [
       { href: '/operaciones', label: 'Viajes', icon: 'viajes' },
+      { href: '/pedidos', label: 'Pedidos', icon: 'ped', badge: pendientesPedidos || undefined },
       { href: '/combustible', label: 'Combustible', icon: 'fuel' },
     ] },
     { titulo: 'Certificados', items: [
