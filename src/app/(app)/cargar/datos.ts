@@ -3,6 +3,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchAll } from '@/lib/fetch-all';
 import { addDays, hoyAR } from '@/lib/periodo';
+import type { ListaPrecio } from '@/lib/precios';
 import { fecha as fmtFecha, money, num2, remito as fmtRemito } from '@/lib/format';
 
 /** Valores distintos, de más a menos usados. */
@@ -24,13 +25,15 @@ export interface CatalogoViaje {
   canteras: string[]; camiones: string[]; choferes: string[];
   /** Último precio y costo unitario usados, por "obra|material" y por "razón|material" */
   precios: Record<string, { precio: number; costoUnit: number }>;
+  /** Lista de precios de venta por cliente / material / tipo (vacía si todavía no se corrió la migración 0010) */
+  lista: ListaPrecio[];
 }
 interface RemitoCat {
   cantera: string | null; camion: string | null; chofer: string | null; precio: number; costo: number; cantidad: number;
   clientes: { razon_social: string } | null; obras: { nombre: string } | null; materiales: { nombre: string } | null;
 }
 export async function catalogoViaje(db: SupabaseClient): Promise<CatalogoViaje> {
-  const [clientes, obras, materiales, remitos] = await Promise.all([
+  const [clientes, obras, materiales, remitos, listaRes] = await Promise.all([
     db.from('clientes').select('razon_social').eq('activo', true).order('razon_social').limit(3000),
     db.from('obras').select('nombre, clientes(razon_social)').order('nombre').limit(8000),
     db.from('materiales').select('nombre, unidad').order('nombre').limit(500),
@@ -38,7 +41,12 @@ export async function catalogoViaje(db: SupabaseClient): Promise<CatalogoViaje> 
       db.from('remitos').select('cantera,camion,chofer,precio,costo,cantidad,clientes(razon_social),obras(nombre),materiales(nombre)')
         .gte('fecha', desdeReciente()).order('fecha', { ascending: false }).order('id').range(from, to),
     ).catch(() => [] as RemitoCat[]),
+    db.from('lista_precios').select('razon_social,material,tipo,desde,precio_viaje6,precio_m3').order('desde').limit(5000),
   ]);
+  const lista: ListaPrecio[] = listaRes.error ? [] : (listaRes.data ?? []).map((f) => ({
+    razon: f.razon_social as string, material: f.material as string, tipo: f.tipo as 'mayorista' | 'minorista', desde: f.desde as string,
+    viaje6: f.precio_viaje6 == null ? null : Number(f.precio_viaje6), m3: Number(f.precio_m3),
+  }));
   const precios: CatalogoViaje['precios'] = {};
   for (const r of remitos) {
     const mat = r.materiales?.nombre;
@@ -53,7 +61,7 @@ export async function catalogoViaje(db: SupabaseClient): Promise<CatalogoViaje> 
     obras: ((obras.data ?? []) as unknown as { nombre: string; clientes: { razon_social: string } | null }[]).map((o) => ({ nombre: o.nombre, razon: o.clientes?.razon_social ?? '' })),
     materiales: (materiales.data ?? []).map((m) => ({ nombre: m.nombre as string, unidad: m.unidad as string })),
     canteras: frecuentes(remitos.map((r) => r.cantera)), camiones: frecuentes(remitos.map((r) => r.camion)), choferes: frecuentes(remitos.map((r) => r.chofer)),
-    precios,
+    precios, lista,
   };
 }
 

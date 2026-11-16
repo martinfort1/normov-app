@@ -73,7 +73,7 @@ export default async function Pedidos() {
     <>
       <h1>Pedidos</h1>
       <p className="lede">Lo que hay que entregar. Vinculá los viajes ya cargados para ver cuánto se entregó y cuánto falta.</p>
-      <Tablero pedidos={pedidos} cat={cat} hoy={hoyAR()} puedeCargar={acceso.puedeEscribir('pedidos')} puedeVincular={acceso.puedeEscribir('pedidos') && acceso.puedeVer('viajes')} />
+      <Tablero pedidos={pedidos} cat={cat} hoy={hoyAR()} puedeCargar={acceso.puedeEscribir('pedidos')} puedeVincular={acceso.puedeEscribir('pedidos') && acceso.puedeVer('viajes')} puedeCargarViaje={acceso.puedeEscribir('viajes')} />
     </>
   );
 }

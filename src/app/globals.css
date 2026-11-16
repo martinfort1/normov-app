@@ -195,3 +195,14 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .vlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
 .vlist li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; }
 @media (max-width: 900px) { .kanban { grid-template-columns: 1fr; } }
+
+/* Pedidos: tarjeta en movimiento, color por material y barra dividida */
+.kcard { position: relative; transition: opacity .2s ease, filter .2s ease; }
+.kcard.moving { opacity: .55; filter: grayscale(.4); pointer-events: none; }
+.kspin { position: absolute; top: 50%; left: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--bronze); animation: kgira .8s linear infinite; z-index: 2; }
+@keyframes kgira { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .kspin { animation-duration: 2.4s; } .kcard { transition: none; } }
+.mdot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .15); }
+.kbar { flex: 1; display: flex; gap: 3px; height: 9px; }
+.kseg { position: relative; flex-basis: 0; min-width: 6px; border-radius: 3px; overflow: hidden; }
+.kseg i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; transition: width .3s ease; }
