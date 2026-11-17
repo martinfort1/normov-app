@@ -126,6 +126,54 @@ test('el estado "remitado" existe', async () => {
   assert.equal((await q('select estado from pedidos where id = $1', [pedidoId])).rows[0].estado, 'remitado');
 });
 
+test('planeación: camiones con capacidad, patente única, itinerario por día; solo quien carga Pedidos escribe', async () => {
+  await como(CARGA, async () => {
+    const c = (await q("insert into camiones (patente, chofer, capacidad) values ('AB123CD', 'Juan', 12) returning id")).rows[0].id;
+    await assert.rejects(() => q("insert into camiones (patente, capacidad) values (' ab123cd ', 6)"), (e) => e.code === '23505', 'patente repetida');
+    await assert.rejects(() => q("insert into camiones (patente, capacidad) values ('ZZ999ZZ', 0)"), (e) => e.code === '23514', 'capacidad > 0');
+    await q('insert into plan_viajes (fecha, camion_id, orden, pedido_id, material_id, cantidad) values ($1, $2, 1, $3, $4, 12)', ['2026-11-18', c, pedidoId, arena]);
+    await q("insert into plan_choferes (fecha, camion_id, chofer) values ('2026-11-18', $1, 'Pedro')", [c]);
+  });
+  await como(SOLO_VER, async () => {
+    assert.equal((await q('select 1 from camiones')).rows.length, 1);
+    assert.equal((await q('select 1 from plan_viajes')).rows.length, 1);
+    await assert.rejects(() => q("insert into camiones (patente, capacidad) values ('XX111XX', 6)"), (e) => e.code === '42501');
+  });
+  // borrar el pedido borra sus viajes planificados
+  await q('delete from plan_viajes where pedido_id = $1', [pedidoId]);
+});
+
+test('marcar un viaje del plan como hecho suma sus metros al pedido y lo mueve; desmarcar los resta; no se suma dos veces', async () => {
+  const nuevo = (await q("select guardar_pedido(null, $1, null, 'normal', null, $2::jsonb, 'x') as id", [cliente, JSON.stringify([{ material_id: arena, cantidad: 24 }])])).rows[0].id;
+  const cam = (await q("insert into camiones (patente, capacidad) values ('PL111PL', 12) returning id")).rows[0].id;
+  const viaje = async () => (await q("insert into plan_viajes (fecha, camion_id, orden, pedido_id, material_id, cantidad) values ('2026-11-20', $1, 1, $2, $3, 12) returning id", [cam, nuevo, arena])).rows[0].id;
+  const [v1, v2] = [await viaje(), await viaje()];
+  const estado = async () => (await q(`select p.estado, a.entregado, a.declarado from pedidos p join v_pedido_avance a on a.pedido_id = p.id where p.id = $1`, [nuevo])).rows[0];
+
+  await como(CARGA, async () => { await q('select marcar_viaje_hecho($1, true)', [v1]); });
+  let e = await estado();
+  assert.equal(Number(e.entregado), 12);
+  assert.equal(e.estado, 'realizado', 'de Pendientes pasa a Realizado en parte');
+
+  await como(CARGA, async () => { await q('select marcar_viaje_hecho($1, true)', [v1]); });   // repetir no suma otra vez
+  assert.equal(Number((await estado()).entregado), 12);
+
+  await como(CARGA, async () => { await q('select marcar_viaje_hecho($1, true)', [v2]); });
+  e = await estado();
+  assert.equal(Number(e.entregado), 24);
+  assert.equal(e.estado, 'remitado', 'con todo entregado pasa a Realizado');
+
+  await como(CARGA, async () => { await q('select marcar_viaje_hecho($1, false)', [v1]); });
+  assert.equal(Number((await estado()).entregado), 12);
+
+  // los remitos que lleguen después no duplican: lo entregado es el mayor entre lo anotado y lo remitado
+  const r = await remito('7030', arena, 12);
+  await como(CARGA_V, async () => { await q('insert into pedido_remitos (remito_id, pedido_id) values ($1, $2)', [r, nuevo]); });
+  assert.equal(Number((await estado()).entregado), 12);
+
+  await como(SOLO_VER, async () => { await assert.rejects(() => q('select marcar_viaje_hecho($1, true)', [v1])); });
+});
+
 test('un pedido sin materiales se rechaza', async () => {
   await assert.rejects(() => q("select guardar_pedido(null, $1, null, 'normal', null, '[]'::jsonb, 'x')", [cliente]));
 });

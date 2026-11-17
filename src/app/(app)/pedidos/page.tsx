@@ -37,13 +37,12 @@ export default async function Pedidos() {
   const ids = filas.map((f) => f.id);
 
   type FilaAvance = { item_id?: string; pedido_id: string; material_id: string; pedido: number; entregado: number; declarado?: number; con_remito?: number };
-  const pedirAvance = async (): Promise<{ data: FilaAvance[] | null }> => {
-    if (!ids.length) return { data: [] };
-    const nuevo = await supabase.from('v_pedido_avance').select('item_id,pedido_id,material_id,pedido,entregado,declarado,con_remito').in('pedido_id', ids);
-    if (!nuevo.error) return { data: nuevo.data as unknown as FilaAvance[] };
-    // Antes de la migración 0011 no existen "declarado" ni "con_remito"
-    const viejo = await supabase.from('v_pedido_avance').select('item_id,pedido_id,material_id,pedido,entregado').in('pedido_id', ids);
-    return { data: (viejo.data ?? null) as unknown as FilaAvance[] | null };
+  // `listo` = la migración 0011 ya está corrida (existen "declarado" y "con_remito")
+  const pedirAvance = async (): Promise<{ data: FilaAvance[] | null; listo: boolean }> => {
+    const nuevo = await supabase.from('v_pedido_avance').select('item_id,pedido_id,material_id,pedido,entregado,declarado,con_remito').in('pedido_id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000']);
+    if (!nuevo.error) return { data: nuevo.data as unknown as FilaAvance[], listo: true };
+    const viejo = await supabase.from('v_pedido_avance').select('item_id,pedido_id,material_id,pedido,entregado').in('pedido_id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000']);
+    return { data: (viejo.data ?? null) as unknown as FilaAvance[] | null, listo: false };
   };
   const [avanceRes, vinculosRes, clientesRes, obrasRes, materialesRes] = await Promise.all([
     pedirAvance(),
@@ -88,7 +87,7 @@ export default async function Pedidos() {
     <>
       <h1>Pedidos</h1>
       <p className="lede">Lo que hay que entregar. Vinculá los viajes ya cargados para ver cuánto se entregó y cuánto falta.</p>
-      <Tablero pedidos={pedidos} cat={cat} hoy={hoyAR()} puedeCargar={acceso.puedeEscribir('pedidos')} puedeVincular={acceso.puedeEscribir('pedidos') && acceso.puedeVer('viajes')} puedeCargarViaje={acceso.puedeEscribir('viajes')} />
+      <Tablero pedidos={pedidos} cat={cat} hoy={hoyAR()} puedeCargar={acceso.puedeEscribir('pedidos')} puedeVincular={acceso.puedeEscribir('pedidos') && acceso.puedeVer('viajes')} puedeCargarViaje={acceso.puedeEscribir('viajes')} entregadoListo={avanceRes.listo} />
     </>
   );
 }

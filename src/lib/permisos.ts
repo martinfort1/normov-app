@@ -68,6 +68,8 @@ export function rutasVisibles(a: Acceso): string[] {
   const rutas: string[] = MODULOS.filter((m) => a.puedeVer(m.key)).map((m) => m.ruta);
   // "Cargar datos" tiene formularios para estas secciones; sin permiso de carga en ninguna, no se muestra
   if ((['viajes', 'combustible', 'proveedores', 'cheques'] as const).some((m) => a.puedeEscribir(m))) rutas.push('/cargar');
+  // Planeación usa el permiso de Pedidos
+  if (a.puedeVer('pedidos')) rutas.push('/planeacion');
   if (a.esAdmin) rutas.push('/caja', '/cashflow', '/usuarios');
   return rutas;
 }

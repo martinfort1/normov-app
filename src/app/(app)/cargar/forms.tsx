@@ -158,9 +158,14 @@ function FormCarga({ carpeta, campos, inicial, mantener, opciones, alCambiar, re
 }
 
 // ───────────── viaje ─────────────
-export function FormViaje({ catalogo: cat, hoy, precarga }: { catalogo: CatalogoViaje; hoy: string; precarga?: { razon?: string; cliente?: string; material?: string } }) {
-  const inicial: Valores = { fecha: hoy, remito: '', razon: precarga?.razon ?? '', cliente: precarga?.cliente ?? '', material: precarga?.material ?? '', cantidad: '', precio: '', cantera: '', camion: '', chofer: '', costoUnit: '', iva: '' };
+export function FormViaje({ catalogo: cat, hoy, precarga }: { catalogo: CatalogoViaje; hoy: string; precarga?: { razon?: string; cliente?: string; material?: string; camion?: string; chofer?: string; cantidad?: string; fecha?: string; cantera?: string } }) {
+  const base: Valores = {
+    fecha: precarga?.fecha ?? hoy, remito: '', razon: precarga?.razon ?? '', cliente: precarga?.cliente ?? '', material: precarga?.material ?? '', cantidad: precarga?.cantidad ?? '',
+    precio: '', cantera: precarga?.cantera ?? '', camion: precarga?.camion ?? '', chofer: precarga?.chofer ?? '', costoUnit: '', iva: '',
+  };
   const delaLista = (v: Valores) => precioDeLista(cat.lista, { nombres: [v.cliente, v.razon], material: v.material, cantidad: n(v.cantidad), fecha: v.fecha });
+  // Si ya llegan material y cantidad (desde Planeación), el precio de la lista queda sugerido desde el principio
+  const inicial: Valores = { ...base, precio: delaLista(base) ? String(delaLista(base)!.precio) : '' };
   const campos: Campo[] = [
     { k: 'fecha', label: 'Fecha', tipo: 'date', req: true },
     { k: 'remito', label: 'N° remito', tipo: 'text', ayuda: 'Dejalo vacío si el viaje no tiene remito: se guarda igual, como "(sin número)".' },
@@ -234,7 +239,7 @@ export function FormViaje({ catalogo: cat, hoy, precarga }: { catalogo: Catalogo
       </>
     );
   };
-  return <FormCarga carpeta="viajes" campos={campos} inicial={inicial} mantener={precarga ? ['fecha', 'razon', 'cliente', 'material'] : ['fecha']} opciones={opciones} alCambiar={alCambiar} resumen={resumen} guardar={guardarViaje} boton="Guardar viaje" />;
+  return <FormCarga carpeta="viajes" campos={campos} inicial={inicial} mantener={precarga ? ['fecha', 'razon', 'cliente', 'material', 'camion', 'chofer', 'cantera'] : ['fecha']} opciones={opciones} alCambiar={alCambiar} resumen={resumen} guardar={guardarViaje} boton="Guardar viaje" />;
 }
 
 // ───────────── combustible ─────────────

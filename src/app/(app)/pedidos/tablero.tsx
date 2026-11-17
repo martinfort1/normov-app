@@ -2,6 +2,8 @@
 import { useEffect, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { fecha as fmtFecha, num2 } from '@/lib/format';
+import { colorMaterial } from '@/lib/colores';
+import { Modal } from '@/components/modal';
 import {
   guardarPedido, moverPedido, cerrarPedido, registrarEntregado, sugerirViajes, viajesDelPedido, vincularViajes, desvincularViaje,
   type Prioridad, type ViajeLista, type Columna,
@@ -41,17 +43,6 @@ function plazo(fecha: string | null, hoy: string, vigente: boolean): { texto: st
   return { texto: `En ${d} días · ${f}`, clase: 'good' };
 }
 
-/** Color para reconocer rápido los materiales más frecuentes; el resto toma un color de la paleta, siempre el mismo para el mismo nombre. */
-const COLORES_MATERIAL: Record<string, string> = { 'ARENA': '#d9b13b', 'BASE': '#8a5a2b', '1 AL 3': '#8b929c' };
-const OTROS = ['#3e5c76', '#6f8f72', '#8c6a9e', '#e39b5b', '#b8862f', '#4f8f9c'];
-function colorMaterial(nombre: string): string {
-  const k = nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
-  if (COLORES_MATERIAL[k]) return COLORES_MATERIAL[k];
-  let h = 0;
-  for (const ch of k) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return OTROS[h % OTROS.length];
-}
-
 /** Link a "Cargar viaje" con razón social, obra y material del pedido ya completados. */
 const hrefViaje = (p: PedidoCard, material?: string) =>
   `/cargar?tipo=viaje&razon=${encodeURIComponent(p.cliente)}&cliente=${encodeURIComponent(p.obra ?? '')}&material=${encodeURIComponent(material ?? '')}`;
@@ -60,7 +51,9 @@ const materialPendiente = (p: PedidoCard) => [...p.items].sort((a, b) => (b.pedi
 
 const faltan = (p: PedidoCard) => p.items.reduce((s, i) => s + Math.max(0, i.pedido - i.entregado), 0);
 
-export function Tablero({ pedidos, cat, hoy, puedeCargar, puedeVincular, puedeCargarViaje }: { pedidos: PedidoCard[]; cat: Catalogos; hoy: string; puedeCargar: boolean; puedeVincular: boolean; puedeCargarViaje: boolean }) {
+const unidadTxt = (u: string) => (u === 'm3' ? 'm³' : u);
+
+export function Tablero({ pedidos, cat, hoy, puedeCargar, puedeVincular, puedeCargarViaje, entregadoListo }: { pedidos: PedidoCard[]; cat: Catalogos; hoy: string; puedeCargar: boolean; puedeVincular: boolean; puedeCargarViaje: boolean; entregadoListo: boolean }) {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   const [editando, setEditando] = useState<PedidoCard | 'nuevo' | null>(null);
@@ -100,7 +93,7 @@ export function Tablero({ pedidos, cat, hoy, puedeCargar, puedeVincular, puedeCa
   }
 
   const tarjeta = (p: PedidoCard) => (
-    <Tarjeta key={p.id} p={p} hoy={hoy} puedeCargar={puedeCargar} puedeVincular={puedeVincular} puedeCargarViaje={puedeCargarViaje} pending={pending} ocupado={moviendo === p.id}
+    <Tarjeta key={p.id} p={p} hoy={hoy} puedeCargar={puedeCargar} puedeVincular={puedeVincular} puedeCargarViaje={puedeCargarViaje} entregadoListo={entregadoListo} alError={setMsg} pending={pending} ocupado={moviendo === p.id}
       onDragStart={() => setArrastrando(p.id)} onDragEnd={() => { setArrastrando(null); setSobre(null); }}
       onEditar={() => setEditando(p)} onVincular={() => setVinculando(p)} onCompletar={() => completar(p)} onCancelar={() => cancelar(p)}
       onMover={(e) => correr(p.id, () => moverPedido(p.id, e))} />
@@ -115,14 +108,24 @@ export function Tablero({ pedidos, cat, hoy, puedeCargar, puedeVincular, puedeCa
     </section>
   );
 
-  const totalFalta = pendientes.reduce((s, p) => s + faltan(p), 0);
+  // Lo que falta entregar en total (pendientes y entregados en parte), por unidad: m³, t, h
+  const porUnidad = new Map<string, number>();
+  for (const p of [...pendientes, ...realizados]) {
+    for (const i of p.items) porUnidad.set(i.unidad, (porUnidad.get(i.unidad) ?? 0) + Math.max(0, i.pedido - i.entregado));
+  }
+  const totalFalta = [...porUnidad].filter(([, v]) => v > 0.001).map(([u, v]) => `${num2(v)} ${unidadTxt(u)}`).join(' + ') || `0 m³`;
   return (
     <>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12 }}>
         {puedeCargar && <button className="btn primary" type="button" onClick={() => setEditando('nuevo')}>Nuevo pedido</button>}
-        <span className="note" style={{ margin: 0 }}>{pendientes.length} pendientes · faltan entregar {num2(totalFalta)} en total</span>
+        <span className="note" style={{ margin: 0 }}>
+          {pendientes.length} {pendientes.length === 1 ? 'pedido pendiente' : 'pedidos pendientes'}
+          {realizados.length > 0 && <> · {realizados.length} {realizados.length === 1 ? 'pedido realizado en parte' : 'pedidos realizados en parte'}</>}
+          {' '}· faltan entregar {totalFalta} en total
+        </span>
         {!puedeCargar && <span className="note" style={{ margin: 0 }}>Solo lectura: no tenés permiso para cargar pedidos.</span>}
       </div>
+      {!entregadoListo && <div className="banner">Para anotar los metros entregados y usar la columna final falta correr <b>0011_pedidos_entregado.sql</b> en Supabase.</div>}
       {msg && <div className="banner err">{msg}</div>}
       <div className="kanban" aria-busy={pending}>
         {columna('pendiente', 'Pendientes', pendientes, 'No hay pedidos pendientes.')}
@@ -137,15 +140,22 @@ export function Tablero({ pedidos, cat, hoy, puedeCargar, puedeVincular, puedeCa
 }
 
 // ───────────── tarjeta ─────────────
-function Tarjeta({ p, hoy, puedeCargar, puedeVincular, puedeCargarViaje, pending, ocupado, onDragStart, onDragEnd, onEditar, onVincular, onCompletar, onCancelar, onMover }: {
-  p: PedidoCard; hoy: string; puedeCargar: boolean; puedeVincular: boolean; puedeCargarViaje: boolean; pending: boolean; ocupado: boolean;
+function Tarjeta({ p, hoy, puedeCargar, puedeVincular, puedeCargarViaje, entregadoListo, alError, pending, ocupado, onDragStart, onDragEnd, onEditar, onVincular, onCompletar, onCancelar, onMover }: {
+  p: PedidoCard; hoy: string; puedeCargar: boolean; puedeVincular: boolean; puedeCargarViaje: boolean; entregadoListo: boolean; alError: (mensaje: string) => void; pending: boolean; ocupado: boolean;
   onDragStart: () => void; onDragEnd: () => void; onEditar: () => void; onVincular: () => void; onCompletar: () => void; onCancelar: () => void;
   onMover: (e: Columna) => void;
 }) {
   const pr = PRIORIDADES.find((x) => x.key === p.prioridad)!;
   const pl = plazo(p.fechaEntrega, hoy, p.estado !== 'remitado');
-  // Metros dados por entregados que todavía no tienen viajes (remitos) cargados
-  const sinRemito = p.estado === 'pendiente' ? 0 : p.items.reduce((s, i) => s + Math.max(0, i.entregado - i.conRemito), 0);
+  // Lo que se escribe en "Entregado" se refleja al instante en Falta, remitos y barra, aunque el guardado tarde.
+  // El valor de la base (y de los viajes vinculados) manda cuando el servidor responde.
+  const [borrador, setBorrador] = useState<Record<string, number>>({});
+  useEffect(() => { setBorrador({}); }, [p.items]);
+  const entregadoDe = (i: PedidoCard['items'][number]) => Math.max(borrador[i.itemId] ?? i.entregado, i.conRemito);
+  // Metros entregados que todavía no tienen viajes (remitos) cargados
+  const sinRemito = p.estado === 'pendiente' ? 0 : p.items.reduce((s, i) => s + Math.max(0, entregadoDe(i) - i.conRemito), 0);
+  const total = p.items.reduce((s, i) => s + i.pedido, 0);
+  const pct = total > 0 ? Math.round((p.items.reduce((s, i) => s + Math.min(entregadoDe(i), i.pedido), 0) / total) * 100) : 0;
   return (
     <article className={`kcard prio-${p.prioridad}${ocupado ? ' moving' : ''}`} aria-busy={ocupado} draggable={puedeCargar && !ocupado} onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', p.id); onDragStart(); }} onDragEnd={onDragEnd}>
       {ocupado && <span className="kspin" role="status" aria-label="Actualizando pedido" />}
@@ -158,35 +168,44 @@ function Tarjeta({ p, hoy, puedeCargar, puedeVincular, puedeCargarViaje, pending
       {sinRemito > 0.001 && <div><span className="pill warn" title="Hay metros anotados como entregados que todavía no tienen sus viajes cargados">Falta remito · {num2(sinRemito)}</span></div>}
       {p.obra && <div className="muted" style={{ fontSize: 13 }}>{p.obra}</div>}
       <table className="kitems">
-        <thead><tr><th>Material</th><th className="r">Pedido</th><th className="r">Entregado</th><th className="r">Falta</th></tr></thead>
+        <thead><tr><th>Material</th><th className="r">Pedido</th><th className="r">Entregado</th><th className="r">Falta entregar</th><th className="r">Con remito</th><th className="r">Falta remito</th></tr></thead>
         <tbody>
-          {p.items.map((i) => (
-            <tr key={i.materialId}>
-              <td><span className="mdot" style={{ background: colorMaterial(i.material) }} />{i.material}</td><td className="r">{num2(i.pedido)}</td>
-              <td className="r">
-                {p.estado !== 'pendiente' && puedeCargar && i.itemId ? <Entregado item={i} /> : num2(i.entregado)}
-                {i.entregado > i.conRemito + 0.001 && <div className="muted" style={{ fontSize: 11 }}>{num2(i.conRemito)} con remito</div>}
-              </td>
-              <td className="r" style={{ fontWeight: 600, color: i.entregado >= i.pedido ? 'var(--good)' : undefined }}>{i.entregado >= i.pedido ? '✓' : num2(i.pedido - i.entregado)}</td>
-            </tr>
-          ))}
+          {p.items.map((i) => {
+            const ent = entregadoDe(i);
+            const faltaEntregar = Math.max(0, i.pedido - ent);
+            const faltaRemito = Math.max(0, ent - i.conRemito);
+            return (
+              <tr key={i.materialId}>
+                <td><span className="mdot" style={{ background: colorMaterial(i.material) }} />{i.material}</td>
+                <td className="r">{num2(i.pedido)}</td>
+                <td className="r">
+                  {p.estado !== 'pendiente' && puedeCargar && i.itemId && entregadoListo
+                    ? <Entregado item={i} alEscribir={(n) => setBorrador((b) => { const s = { ...b }; if (n == null) delete s[i.itemId]; else s[i.itemId] = n; return s; })} alError={alError} />
+                    : num2(ent)}
+                </td>
+                <td className="r" style={{ fontWeight: 600, color: faltaEntregar <= 0.001 ? 'var(--good)' : undefined }}>{faltaEntregar <= 0.001 ? '✓' : num2(faltaEntregar)}</td>
+                <td className="r">{i.conRemito > 0.001 ? num2(i.conRemito) : '—'}</td>
+                <td className="r" style={{ fontWeight: 600, color: faltaRemito > 0.001 ? 'var(--warn)' : 'var(--muted)' }}>{faltaRemito > 0.001 ? num2(faltaRemito) : ent > 0.001 ? '✓' : '—'}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       {/* Una sola barra dividida por material: cada tramo mide lo pedido de ese material (sobre el total) y se llena, con su color, según lo entregado. */}
-      <div className="kprog" title={`${p.pct}% completado`}>
-        <div className="kbar" role="img" aria-label={`${p.pct}% completado`}>
+      <div className="kprog" title={`${pct}% completado`}>
+        <div className="kbar" role="img" aria-label={`${pct}% completado`}>
           {p.items.map((i) => {
             const c = colorMaterial(i.material);
-            const llenado = i.pedido > 0 ? Math.min(100, (i.entregado / i.pedido) * 100) : 0;
+            const llenado = i.pedido > 0 ? Math.min(100, (entregadoDe(i) / i.pedido) * 100) : 0;
             return (
               <span key={i.materialId} className="kseg" style={{ flexGrow: i.pedido, background: `color-mix(in srgb, ${c} 22%, transparent)` }}
-                title={`${i.material}: ${num2(Math.min(i.entregado, i.pedido))} de ${num2(i.pedido)} (${Math.round(llenado)}%)`}>
+                title={`${i.material}: ${num2(Math.min(entregadoDe(i), i.pedido))} de ${num2(i.pedido)} (${Math.round(llenado)}%)`}>
                 <i style={{ width: `${llenado}%`, background: c }} />
               </span>
             );
           })}
         </div>
-        <b>{p.pct}%</b>
+        <b>{pct}%</b>
       </div>
       <div className="kacts">
         {puedeCargarViaje && <Link className="btn sm" href={hrefViaje(p, materialPendiente(p))}>Cargar viaje</Link>}
@@ -218,46 +237,28 @@ function Tarjeta({ p, hoy, puedeCargar, puedeVincular, puedeCargarViaje, pending
 }
 
 /** Metros entregados de un material, editables mientras el pedido está en "Realizado" (se guarda al salir del campo o con Enter). */
-function Entregado({ item }: { item: PedidoCard['items'][number] }) {
+function Entregado({ item, alEscribir, alError }: { item: PedidoCard['items'][number]; alEscribir: (n: number | null) => void; alError: (mensaje: string) => void }) {
   const [valor, setValor] = useState(String(item.entregado));
   const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   useEffect(() => { setValor(String(item.entregado)); }, [item.entregado]);
+  const aNumero = (s: string) => { const n = parseFloat(s.replace(',', '.')); return Number.isFinite(n) && n >= 0 ? n : null; };
 
   async function guardar() {
-    const n = parseFloat(valor.replace(',', '.'));
-    if (!Number.isFinite(n) || n === item.entregado) { setValor(String(item.entregado)); return; }
-    setGuardando(true); setError(null);
+    const n = aNumero(valor);
+    if (n == null || n === item.entregado) { setValor(String(item.entregado)); alEscribir(null); return; }
+    setGuardando(true);
     const r = await registrarEntregado(item.itemId, n);
     setGuardando(false);
-    if (r.error) { setError(r.error); setValor(String(item.entregado)); }
+    if (r.error) { alError(r.error); setValor(String(item.entregado)); alEscribir(null); } // deshace lo mostrado y avisa
   }
   return (
-    <>
-      <input className="kinput" type="text" inputMode="decimal" value={valor} disabled={guardando} aria-label={`Metros entregados de ${item.material}`}
-        onChange={(e) => setValor(e.target.value)} onBlur={guardar}
-        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setValor(String(item.entregado)); e.currentTarget.blur(); } }} />
-      {error && <div style={{ fontSize: 11, color: 'var(--bad)' }}>{error}</div>}
-    </>
+    <input className="kinput" type="text" inputMode="decimal" value={valor} disabled={guardando} aria-label={`Metros entregados de ${item.material}`}
+      onChange={(e) => { setValor(e.target.value); alEscribir(aNumero(e.target.value)); }} onBlur={guardar}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setValor(String(item.entregado)); alEscribir(null); e.currentTarget.blur(); } }} />
   );
 }
 
 // ───────────── ventana ─────────────
-function Modal({ titulo, onCerrar, children }: { titulo: string; onCerrar: () => void; children: React.ReactNode }) {
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onCerrar(); };
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, [onCerrar]);
-  return (
-    <div className="modal-bg" onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={titulo}>
-        <header className="modal-h"><h2>{titulo}</h2><button type="button" className="btn sm ghost" onClick={onCerrar} aria-label="Cerrar">✕</button></header>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 // ───────────── crear / editar ─────────────
 function Formulario({ pedido, cat, onCerrar }: { pedido: PedidoCard | null; cat: Catalogos; onCerrar: () => void }) {

@@ -227,3 +227,28 @@ header.top .in { max-width: none; padding-left: 20px; padding-right: 20px; }
 .pill.info { background: color-mix(in srgb, var(--c2) 16%, transparent); color: var(--c2); border-color: transparent; }
 .pill.bronze { background: var(--bronze-soft); color: var(--bronze-ink); border-color: transparent; }
 @media (prefers-color-scheme: dark) { .pill.info { color: #9db9d3; } }
+
+/* ───────────── Planeación ───────────── */
+.plan-grid { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.plan-h { display: flex; align-items: center; gap: 8px; font-size: 16px; margin: 0 0 10px; }
+.plan-pedidos { display: grid; gap: 10px; align-content: start; }
+.plan-camiones { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.plan-camion { margin: 0; display: grid; gap: 4px; align-content: start; }
+.plan-camion-h { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.plan-patente { font-family: var(--display); font-size: 24px; font-weight: 600; letter-spacing: .04em; line-height: 1.1; }
+.plan-itin { list-style: none; margin: 4px 0 6px; padding: 0; display: grid; gap: 6px; counter-reset: none; }
+.plan-itin li { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.plan-itin li.hecho { opacity: .7; border-color: var(--good); }
+.plan-itin li.vacio { display: block; text-align: center; border-style: dashed; background: transparent; }
+.plan-n { width: 24px; height: 24px; border-radius: 50%; background: var(--bronze); color: #fff; font-size: 13px; font-weight: 600; display: grid; place-items: center; }
+.plan-itin li.hecho .plan-n { background: var(--good); }
+.plan-acc { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 140px; }
+.pbar { position: relative; flex: 1; height: 9px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.pbar .hecho { position: absolute; inset: 0 auto 0 0; background: var(--good); }
+.pbar .previsto { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, var(--bronze), var(--bronze) 4px, color-mix(in srgb, var(--bronze) 45%, transparent) 4px, color-mix(in srgb, var(--bronze) 45%, transparent) 8px); }
+@media (max-width: 1100px) { .plan-grid { grid-template-columns: 1fr; } }
+
+/* Planeación: Desde (cantera) → Hasta (cliente / obra) */
+.plan-lbl { display: inline-block; min-width: 42px; margin-right: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.plan-desde { display: flex; align-items: center; margin-bottom: 2px; }
+.plan-cantera { width: 100%; max-width: 190px; text-align: left; text-transform: uppercase; }
