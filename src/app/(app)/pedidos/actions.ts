@@ -43,13 +43,19 @@ export async function guardarPedido(p: PedidoInput): Promise<Resultado> {
   return { error: null };
 }
 
-/** Cambia de columna (pendiente ⇄ realizado). Un pedido archivado no se mueve. */
-export async function moverPedido(id: string, estado: 'pendiente' | 'realizado'): Promise<Resultado> {
+export type Columna = 'pendiente' | 'realizado' | 'remitado';
+const COLUMNAS: Columna[] = ['pendiente', 'realizado', 'remitado'];
+const AVISO_0011 = 'Falta correr la migración 0011_pedidos_entregado.sql en Supabase para usar la columna "Con remitos".';
+
+/** Cambia de columna (pendiente → realizado → con remitos, y de vuelta). Un pedido archivado no se mueve. */
+export async function moverPedido(id: string, estado: Columna): Promise<Resultado> {
   if (!(await autor())) return { error: SIN_PERMISO };
-  if (!UUID.test(id) || (estado !== 'pendiente' && estado !== 'realizado')) return { error: 'Pedido inválido.' };
+  if (!UUID.test(id) || !COLUMNAS.includes(estado)) return { error: 'Pedido inválido.' };
   const supabase = await createClient();
-  const { data, error } = await supabase.from('pedidos').update({ estado }).eq('id', id).in('estado', ['pendiente', 'realizado']).select('id');
-  if (error) return { error: error.message };
+  const mover = (abiertos: string[]) => supabase.from('pedidos').update({ estado }).eq('id', id).in('estado', abiertos).select('id');
+  let { data, error } = await mover(COLUMNAS);
+  if (error && /estado_pedido/.test(error.message) && estado !== 'remitado') ({ data, error } = await mover(['pendiente', 'realizado'])); // antes de la migración 0011
+  if (error) return { error: /estado_pedido/.test(error.message) ? AVISO_0011 : error.message };
   if (!data?.length) return { error: 'No se pudo mover: el pedido ya no está en el tablero.' };
   revalidatePath('/pedidos');
   return { error: null };
@@ -60,9 +66,25 @@ export async function cerrarPedido(id: string, motivo: 'completado' | 'cancelado
   if (!(await autor())) return { error: SIN_PERMISO };
   if (!UUID.test(id) || (motivo !== 'completado' && motivo !== 'cancelado')) return { error: 'Pedido inválido.' };
   const supabase = await createClient();
-  const { data, error } = await supabase.from('pedidos').update({ estado: motivo, cerrado: new Date().toISOString() }).eq('id', id).in('estado', ['pendiente', 'realizado']).select('id');
+  const cerrar = (abiertos: string[]) => supabase.from('pedidos').update({ estado: motivo, cerrado: new Date().toISOString() }).eq('id', id).in('estado', abiertos).select('id');
+  let { data, error } = await cerrar(COLUMNAS);
+  if (error && /estado_pedido/.test(error.message)) ({ data, error } = await cerrar(['pendiente', 'realizado'])); // antes de la migración 0011
   if (error) return { error: error.message };
   if (!data?.length) return { error: 'El pedido ya estaba cerrado.' };
+  revalidatePath('/pedidos');
+  return { error: null };
+}
+
+/** Anota los metros entregados de un material, sin necesidad de tener los viajes cargados (se reemplaza por lo que sumen los
+ *  viajes vinculados cuando éstos lo superan). */
+export async function registrarEntregado(itemId: string, cantidad: number): Promise<Resultado> {
+  if (!(await autor())) return { error: SIN_PERMISO };
+  if (!UUID.test(itemId)) return { error: 'Material inválido.' };
+  if (!Number.isFinite(cantidad) || cantidad < 0 || cantidad > 1_000_000) return { error: 'Escribí una cantidad válida (0 o más).' };
+  const supabase = await createClient();
+  const { data, error } = await supabase.from('pedido_items').update({ entregado_declarado: Math.round(cantidad * 100) / 100 }).eq('id', itemId).select('id');
+  if (error) return { error: /entregado_declarado/.test(error.message) ? 'Falta correr la migración 0011_pedidos_entregado.sql en Supabase.' : error.message };
+  if (!data?.length) return { error: 'No se pudo guardar: el material ya no está en el pedido.' };
   revalidatePath('/pedidos');
   return { error: null };
 }

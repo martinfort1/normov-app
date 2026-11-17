@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 const RANGO = { urgente: 0, alta: 1, normal: 2, baja: 3 } as const;
 
 interface FilaPedido {
-  id: string; numero: number; cliente_id: string; obra_id: string | null; prioridad: keyof typeof RANGO; fecha_entrega: string | null; estado: 'pendiente' | 'realizado';
+  id: string; numero: number; cliente_id: string; obra_id: string | null; prioridad: keyof typeof RANGO; fecha_entrega: string | null; estado: 'pendiente' | 'realizado' | 'remitado';
   clientes: { razon_social: string } | null; obras: { nombre: string } | null;
 }
 
@@ -18,8 +18,11 @@ export default async function Pedidos() {
   if (!acceso?.puedeVer('pedidos')) return <SinAcceso seccion="Pedidos" />;
   const supabase = await createClient();
 
-  const pedidosRes = await supabase.from('pedidos').select('id,numero,cliente_id,obra_id,prioridad,fecha_entrega,estado,clientes(razon_social),obras(nombre)')
-    .in('estado', ['pendiente', 'realizado']).order('numero').limit(500);
+  const pedirPedidos = (estados: string[]) => supabase.from('pedidos').select('id,numero,cliente_id,obra_id,prioridad,fecha_entrega,estado,clientes(razon_social),obras(nombre)')
+    .in('estado', estados).order('numero').limit(500);
+  let pedidosRes = await pedirPedidos(['pendiente', 'realizado', 'remitado']);
+  // Antes de la migración 0011 la base no conoce el estado "remitado"
+  if (pedidosRes.error && /estado_pedido/.test(pedidosRes.error.message)) pedidosRes = await pedirPedidos(['pendiente', 'realizado']);
   if (pedidosRes.error) {
     return (
       <>
@@ -33,8 +36,17 @@ export default async function Pedidos() {
   const filas = (pedidosRes.data ?? []) as unknown as FilaPedido[];
   const ids = filas.map((f) => f.id);
 
+  type FilaAvance = { item_id?: string; pedido_id: string; material_id: string; pedido: number; entregado: number; declarado?: number; con_remito?: number };
+  const pedirAvance = async (): Promise<{ data: FilaAvance[] | null }> => {
+    if (!ids.length) return { data: [] };
+    const nuevo = await supabase.from('v_pedido_avance').select('item_id,pedido_id,material_id,pedido,entregado,declarado,con_remito').in('pedido_id', ids);
+    if (!nuevo.error) return { data: nuevo.data as unknown as FilaAvance[] };
+    // Antes de la migración 0011 no existen "declarado" ni "con_remito"
+    const viejo = await supabase.from('v_pedido_avance').select('item_id,pedido_id,material_id,pedido,entregado').in('pedido_id', ids);
+    return { data: (viejo.data ?? null) as unknown as FilaAvance[] | null };
+  };
   const [avanceRes, vinculosRes, clientesRes, obrasRes, materialesRes] = await Promise.all([
-    ids.length ? supabase.from('v_pedido_avance').select('pedido_id,material_id,pedido,entregado').in('pedido_id', ids) : Promise.resolve({ data: [], error: null }),
+    pedirAvance(),
     ids.length ? supabase.from('pedido_remitos').select('pedido_id').in('pedido_id', ids) : Promise.resolve({ data: [], error: null }),
     supabase.from('clientes').select('id,razon_social').eq('activo', true).order('razon_social').limit(3000),
     supabase.from('obras').select('id,nombre,cliente_id').order('nombre').limit(8000),
@@ -45,10 +57,13 @@ export default async function Pedidos() {
   const viajes = new Map<string, number>();
   for (const v of (vinculosRes.data ?? []) as { pedido_id: string }[]) viajes.set(v.pedido_id, (viajes.get(v.pedido_id) ?? 0) + 1);
   const itemsDe = new Map<string, PedidoCard['items']>();
-  for (const a of (avanceRes.data ?? []) as { pedido_id: string; material_id: string; pedido: number; entregado: number }[]) {
+  for (const a of avanceRes.data ?? []) {
     const m = materiales.get(a.material_id);
     const lista = itemsDe.get(a.pedido_id) ?? [];
-    lista.push({ materialId: a.material_id, material: m?.nombre ?? '—', unidad: m?.unidad ?? 'm3', pedido: Number(a.pedido), entregado: Number(a.entregado) });
+    lista.push({
+      itemId: a.item_id ?? '', materialId: a.material_id, material: m?.nombre ?? '—', unidad: m?.unidad ?? 'm3', pedido: Number(a.pedido), entregado: Number(a.entregado),
+      conRemito: a.con_remito == null ? Number(a.entregado) : Number(a.con_remito),
+    });
     itemsDe.set(a.pedido_id, lista);
   }
 

@@ -103,6 +103,29 @@ test('editar un pedido: cambia cantidades y quita materiales', async () => {
   assert.equal((await q('select prioridad from pedidos where id = $1', [pedidoId])).rows[0].prioridad, 'baja');
 });
 
+test('metros anotados a mano: lo entregado es el mayor entre lo anotado y lo que suman los viajes vinculados', async () => {
+  const item = (await q('select id from pedido_items where pedido_id = $1 and material_id = $2', [pedidoId, arena])).rows[0].id;
+  const leer = async () => (await como(CARGA, async () => (await q('select entregado, declarado, con_remito from v_pedido_avance where item_id = $1', [item])).rows[0]));
+  await como(CARGA, async () => { await q('update pedido_items set entregado_declarado = 30 where id = $1', [item]); });
+  let a = await leer();
+  assert.equal(Number(a.entregado), 30);            // anotado 30, viajes 12
+  assert.equal(Number(a.con_remito), 12);
+  const r = await remito('7020', arena, 24);        // ahora los viajes suman 36: mandan los viajes
+  await como(CARGA_V, async () => { await q('insert into pedido_remitos (remito_id, pedido_id) values ($1, $2)', [r, pedidoId]); });
+  a = await leer();
+  assert.equal(Number(a.entregado), 36);
+  // solo quien carga Pedidos puede anotar metros
+  await como(SOLO_VER, async () => {
+    const n = (await q('update pedido_items set entregado_declarado = 1 where id = $1 returning id', [item])).rows.length;
+    assert.equal(n, 0);
+  });
+});
+
+test('el estado "remitado" existe', async () => {
+  await q("update pedidos set estado = 'remitado' where id = $1", [pedidoId]);
+  assert.equal((await q('select estado from pedidos where id = $1', [pedidoId])).rows[0].estado, 'remitado');
+});
+
 test('un pedido sin materiales se rechaza', async () => {
   await assert.rejects(() => q("select guardar_pedido(null, $1, null, 'normal', null, '[]'::jsonb, 'x')", [cliente]));
 });

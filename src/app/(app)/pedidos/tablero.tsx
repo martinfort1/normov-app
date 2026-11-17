@@ -3,14 +3,15 @@ import { useEffect, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { fecha as fmtFecha, num2 } from '@/lib/format';
 import {
-  guardarPedido, moverPedido, cerrarPedido, sugerirViajes, viajesDelPedido, vincularViajes, desvincularViaje,
-  type Prioridad, type ViajeLista,
+  guardarPedido, moverPedido, cerrarPedido, registrarEntregado, sugerirViajes, viajesDelPedido, vincularViajes, desvincularViaje,
+  type Prioridad, type ViajeLista, type Columna,
 } from './actions';
 
 export interface PedidoCard {
   id: string; numero: number; clienteId: string; cliente: string; obraId: string | null; obra: string | null;
-  prioridad: Prioridad; fechaEntrega: string | null; estado: 'pendiente' | 'realizado';
-  items: { materialId: string; material: string; unidad: string; pedido: number; entregado: number }[];
+  prioridad: Prioridad; fechaEntrega: string | null; estado: Columna;
+  /** entregado = lo mayor entre lo anotado a mano y lo que suman los viajes vinculados (conRemito) */
+  items: { itemId: string; materialId: string; material: string; unidad: string; pedido: number; entregado: number; conRemito: number }[];
   viajes: number; pct: number;
 }
 export interface Catalogos {
@@ -22,9 +23,23 @@ export interface Catalogos {
 const PRIORIDADES: { key: Prioridad; label: string; clase: string }[] = [
   { key: 'urgente', label: 'Urgente', clase: 'bad' },
   { key: 'alta', label: 'Alta', clase: 'warn' },
-  { key: 'normal', label: 'Normal', clase: '' },
-  { key: 'baja', label: 'Baja', clase: 'muted' },
+  { key: 'normal', label: 'Normal', clase: 'info' },
+  { key: 'baja', label: 'Baja', clase: '' },
 ];
+
+/** Cuánto falta para la fecha de entrega, con color: rojo vencido o de hoy, naranja 1-3 días, dorado hasta una semana, verde más lejos. */
+function plazo(fecha: string | null, hoy: string, vigente: boolean): { texto: string; clase: string } {
+  if (!fecha) return { texto: 'Sin fecha', clase: '' };
+  const f = fmtFecha(fecha);
+  if (!vigente) return { texto: `Entrega ${f}`, clase: '' };
+  const d = Math.round((Date.parse(fecha) - Date.parse(hoy)) / 86_400_000);
+  if (d < 0) return { texto: `Vencido hace ${-d} ${-d === 1 ? 'día' : 'días'} · ${f}`, clase: 'bad' };
+  if (d === 0) return { texto: `Entrega hoy · ${f}`, clase: 'bad' };
+  if (d === 1) return { texto: `Entrega mañana · ${f}`, clase: 'warn' };
+  if (d <= 3) return { texto: `En ${d} días · ${f}`, clase: 'warn' };
+  if (d <= 7) return { texto: `En ${d} días · ${f}`, clase: 'bronze' };
+  return { texto: `En ${d} días · ${f}`, clase: 'good' };
+}
 
 /** Color para reconocer rápido los materiales más frecuentes; el resto toma un color de la paleta, siempre el mismo para el mismo nombre. */
 const COLORES_MATERIAL: Record<string, string> = { 'ARENA': '#d9b13b', 'BASE': '#8a5a2b', '1 AL 3': '#8b929c' };
@@ -51,10 +66,11 @@ export function Tablero({ pedidos, cat, hoy, puedeCargar, puedeVincular, puedeCa
   const [editando, setEditando] = useState<PedidoCard | 'nuevo' | null>(null);
   const [vinculando, setVinculando] = useState<PedidoCard | null>(null);
   const [arrastrando, setArrastrando] = useState<string | null>(null);
-  const [sobre, setSobre] = useState<'pendiente' | 'realizado' | null>(null);
+  const [sobre, setSobre] = useState<Columna | null>(null);
 
   const pendientes = pedidos.filter((p) => p.estado === 'pendiente');
   const realizados = pedidos.filter((p) => p.estado === 'realizado');
+  const remitados = pedidos.filter((p) => p.estado === 'remitado');
 
   /** Pedido que se está moviendo / cerrando: su tarjeta se atenúa y muestra una rueda hasta que el servidor responde. */
   const [moviendo, setMoviendo] = useState<string | null>(null);
@@ -75,7 +91,7 @@ export function Tablero({ pedidos, cat, hoy, puedeCargar, puedeVincular, puedeCa
     if (!confirm(`¿Cancelar el pedido #${p.numero} de ${p.cliente}? Se archiva y deja de verse acá.`)) return;
     correr(p.id, () => cerrarPedido(p.id, 'cancelado'));
   }
-  function soltar(estado: 'pendiente' | 'realizado') {
+  function soltar(estado: Columna) {
     const id = arrastrando;
     setArrastrando(null); setSobre(null);
     const p = pedidos.find((x) => x.id === id);
@@ -89,7 +105,7 @@ export function Tablero({ pedidos, cat, hoy, puedeCargar, puedeVincular, puedeCa
       onEditar={() => setEditando(p)} onVincular={() => setVinculando(p)} onCompletar={() => completar(p)} onCancelar={() => cancelar(p)}
       onMover={(e) => correr(p.id, () => moverPedido(p.id, e))} />
   );
-  const columna = (estado: 'pendiente' | 'realizado', titulo: string, lista: PedidoCard[], vacio: string) => (
+  const columna = (estado: Columna, titulo: string, lista: PedidoCard[], vacio: string) => (
     <section className={`kcol${sobre === estado && arrastrando ? ' over' : ''}`} aria-label={titulo}
       onDragOver={(e) => { if (arrastrando && puedeCargar) { e.preventDefault(); setSobre(estado); } }}
       onDragLeave={() => setSobre((s) => (s === estado ? null : s))} onDrop={(e) => { e.preventDefault(); soltar(estado); }}>
@@ -110,7 +126,8 @@ export function Tablero({ pedidos, cat, hoy, puedeCargar, puedeVincular, puedeCa
       {msg && <div className="banner err">{msg}</div>}
       <div className="kanban" aria-busy={pending}>
         {columna('pendiente', 'Pendientes', pendientes, 'No hay pedidos pendientes.')}
-        {columna('realizado', 'Realizado', realizados, 'Arrastrá acá los pedidos que ya se entregaron.')}
+        {columna('realizado', 'Realizado en parte', realizados, 'Arrastrá acá lo que se entregó solo en parte. Anotá los metros entregados y cargá los remitos cuando lleguen.')}
+        {columna('remitado', 'Realizado', remitados, 'Pedidos con todo entregado, listos para completar.')}
       </div>
 
       {editando && <Formulario pedido={editando === 'nuevo' ? null : editando} cat={cat} onCerrar={() => setEditando(null)} />}
@@ -123,26 +140,33 @@ export function Tablero({ pedidos, cat, hoy, puedeCargar, puedeVincular, puedeCa
 function Tarjeta({ p, hoy, puedeCargar, puedeVincular, puedeCargarViaje, pending, ocupado, onDragStart, onDragEnd, onEditar, onVincular, onCompletar, onCancelar, onMover }: {
   p: PedidoCard; hoy: string; puedeCargar: boolean; puedeVincular: boolean; puedeCargarViaje: boolean; pending: boolean; ocupado: boolean;
   onDragStart: () => void; onDragEnd: () => void; onEditar: () => void; onVincular: () => void; onCompletar: () => void; onCancelar: () => void;
-  onMover: (e: 'pendiente' | 'realizado') => void;
+  onMover: (e: Columna) => void;
 }) {
   const pr = PRIORIDADES.find((x) => x.key === p.prioridad)!;
-  const vencido = !!p.fechaEntrega && p.fechaEntrega < hoy && p.estado === 'pendiente';
+  const pl = plazo(p.fechaEntrega, hoy, p.estado !== 'remitado');
+  // Metros dados por entregados que todavía no tienen viajes (remitos) cargados
+  const sinRemito = p.estado === 'pendiente' ? 0 : p.items.reduce((s, i) => s + Math.max(0, i.entregado - i.conRemito), 0);
   return (
-    <article className={`kcard${ocupado ? ' moving' : ''}`} aria-busy={ocupado} draggable={puedeCargar && !ocupado} onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', p.id); onDragStart(); }} onDragEnd={onDragEnd}>
+    <article className={`kcard prio-${p.prioridad}${ocupado ? ' moving' : ''}`} aria-busy={ocupado} draggable={puedeCargar && !ocupado} onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', p.id); onDragStart(); }} onDragEnd={onDragEnd}>
       {ocupado && <span className="kspin" role="status" aria-label="Actualizando pedido" />}
       <div className="kcard-top">
         <span className="muted">#{p.numero}</span>
         <span className={`pill ${pr.clase}`}>{pr.label}</span>
-        <span className={`pill${vencido ? ' bad' : ''}`} style={{ marginLeft: 'auto' }}>{p.fechaEntrega ? `${vencido ? 'Vencido · ' : 'Entrega '}${fmtFecha(p.fechaEntrega)}` : 'Sin fecha'}</span>
+        <span className={`pill ${pl.clase}`} style={{ marginLeft: 'auto' }}>{pl.texto}</span>
       </div>
       <div className="kcard-cli">{p.cliente}</div>
+      {sinRemito > 0.001 && <div><span className="pill warn" title="Hay metros anotados como entregados que todavía no tienen sus viajes cargados">Falta remito · {num2(sinRemito)}</span></div>}
       {p.obra && <div className="muted" style={{ fontSize: 13 }}>{p.obra}</div>}
       <table className="kitems">
         <thead><tr><th>Material</th><th className="r">Pedido</th><th className="r">Entregado</th><th className="r">Falta</th></tr></thead>
         <tbody>
           {p.items.map((i) => (
             <tr key={i.materialId}>
-              <td><span className="mdot" style={{ background: colorMaterial(i.material) }} />{i.material}</td><td className="r">{num2(i.pedido)}</td><td className="r">{num2(i.entregado)}</td>
+              <td><span className="mdot" style={{ background: colorMaterial(i.material) }} />{i.material}</td><td className="r">{num2(i.pedido)}</td>
+              <td className="r">
+                {p.estado !== 'pendiente' && puedeCargar && i.itemId ? <Entregado item={i} /> : num2(i.entregado)}
+                {i.entregado > i.conRemito + 0.001 && <div className="muted" style={{ fontSize: 11 }}>{num2(i.conRemito)} con remito</div>}
+              </td>
               <td className="r" style={{ fontWeight: 600, color: i.entregado >= i.pedido ? 'var(--good)' : undefined }}>{i.entregado >= i.pedido ? '✓' : num2(i.pedido - i.entregado)}</td>
             </tr>
           ))}
@@ -171,19 +195,50 @@ function Tarjeta({ p, hoy, puedeCargar, puedeVincular, puedeCargarViaje, pending
         {puedeCargar && (
           <>
             <button type="button" className="btn sm" onClick={onEditar} disabled={pending}>Editar</button>
-            {p.estado === 'pendiente'
-              ? <button type="button" className="btn sm" onClick={() => onMover('realizado')} disabled={pending}>Pasar a Realizado</button>
-              : (
-                <>
-                  <button type="button" className="btn sm primary" onClick={onCompletar} disabled={pending}>Completar</button>
-                  <button type="button" className="btn sm" onClick={() => onMover('pendiente')} disabled={pending}>Falta entregar</button>
-                </>
-              )}
+            {p.estado === 'pendiente' && (
+              <>
+                <button type="button" className="btn sm" onClick={() => onMover('realizado')} disabled={pending}>Entrega parcial</button>
+                <button type="button" className="btn sm" onClick={() => onMover('remitado')} disabled={pending}>Entrega completa</button>
+              </>
+            )}
+            {p.estado === 'realizado' && (
+              <>
+                <button type="button" className="btn sm" onClick={() => onMover('remitado')} disabled={pending}>Entrega completa</button>
+                <button type="button" className="btn sm" onClick={() => onMover('pendiente')} disabled={pending}>Falta entregar</button>
+              </>
+            )}
+            {p.estado === 'remitado' && <button type="button" className="btn sm" onClick={() => onMover('realizado')} disabled={pending}>Falta entregar</button>}
+            {p.estado !== 'pendiente' && <button type="button" className="btn sm primary" onClick={onCompletar} disabled={pending}>Completar</button>}
             <button type="button" className="btn sm danger" onClick={onCancelar} disabled={pending}>Cancelar</button>
           </>
         )}
       </div>
     </article>
+  );
+}
+
+/** Metros entregados de un material, editables mientras el pedido está en "Realizado" (se guarda al salir del campo o con Enter). */
+function Entregado({ item }: { item: PedidoCard['items'][number] }) {
+  const [valor, setValor] = useState(String(item.entregado));
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setValor(String(item.entregado)); }, [item.entregado]);
+
+  async function guardar() {
+    const n = parseFloat(valor.replace(',', '.'));
+    if (!Number.isFinite(n) || n === item.entregado) { setValor(String(item.entregado)); return; }
+    setGuardando(true); setError(null);
+    const r = await registrarEntregado(item.itemId, n);
+    setGuardando(false);
+    if (r.error) { setError(r.error); setValor(String(item.entregado)); }
+  }
+  return (
+    <>
+      <input className="kinput" type="text" inputMode="decimal" value={valor} disabled={guardando} aria-label={`Metros entregados de ${item.material}`}
+        onChange={(e) => setValor(e.target.value)} onBlur={guardar}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setValor(String(item.entregado)); e.currentTarget.blur(); } }} />
+      {error && <div style={{ fontSize: 11, color: 'var(--bad)' }}>{error}</div>}
+    </>
   );
 }
 

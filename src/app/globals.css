@@ -206,3 +206,24 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .kbar { flex: 1; display: flex; gap: 3px; height: 9px; }
 .kseg { position: relative; flex-basis: 0; min-width: 6px; border-radius: 3px; overflow: hidden; }
 .kseg i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; transition: width .3s ease; }
+
+/* Pedidos: tres columnas, metros entregados editables */
+.kanban { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1200px) { .kanban { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .kanban { grid-template-columns: 1fr; } }
+.kinput { width: 64px; padding: 2px 5px; font-size: 13px; text-align: right; min-height: 0; border: 1px solid var(--bronze); border-radius: 5px; background: var(--surface); font-variant-numeric: tabular-nums; }
+
+/* Pantalla completa: el menú lateral queda pegado a la izquierda y la vista principal usa todo el ancho */
+.wrap { max-width: none; }
+header.top .in { max-width: none; padding-left: 20px; padding-right: 20px; }
+.shell { max-width: none; padding: 0 20px; gap: 22px; }
+
+/* Pedidos: color por prioridad (borde de la tarjeta + etiqueta) y por tiempo hasta la entrega */
+.kcard { border-left: 5px solid var(--line); }
+.kcard.prio-urgente { border-left-color: var(--bad); }
+.kcard.prio-alta { border-left-color: #e08a1e; }
+.kcard.prio-normal { border-left-color: var(--c2); }
+.kcard.prio-baja { border-left-color: var(--c-other); }
+.pill.info { background: color-mix(in srgb, var(--c2) 16%, transparent); color: var(--c2); border-color: transparent; }
+.pill.bronze { background: var(--bronze-soft); color: var(--bronze-ink); border-color: transparent; }
+@media (prefers-color-scheme: dark) { .pill.info { color: #9db9d3; } }
