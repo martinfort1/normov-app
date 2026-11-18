@@ -7,7 +7,7 @@ import { fecha as fmtFecha, num2 } from '@/lib/format';
 import { addDays } from '@/lib/periodo';
 import { colorMaterial } from '@/lib/colores';
 import { Modal } from '@/components/modal';
-import { agregarViaje, eliminarCamion, guardarCamion, marcarHecho, intercambiarViajes, quitarViaje, setCantera, setChoferDelDia, setDisponible, type Resultado } from './actions';
+import { agregarViaje, copiarPlan, eliminarCamion, guardarCamion, marcarHecho, intercambiarViajes, quitarViaje, setCantera, setChoferDelDia, setDisponible, type Resultado } from './actions';
 
 /** Minorista: viajes de hasta 12 m³. Mayorista: más de 12 m³. */
 export type Segmento = 'minorista' | 'mayorista';
@@ -56,7 +56,7 @@ async function copiar(texto: string): Promise<boolean> {
   }
 }
 
-type Ventana = { tipo: 'asignar'; camionId?: string; pedidoId?: string; materialId?: string } | { tipo: 'camion'; camion: CamionPlan | null } | null;
+type Ventana = { tipo: 'asignar'; camionId?: string; pedidoId?: string; materialId?: string } | { tipo: 'camion'; camion: CamionPlan | null } | { tipo: 'copiar' } | null;
 
 export function Planeacion({ fecha, hoy, camiones, pedidos: todosPedidos, canteras, segmentoListo, puedeCargar, puedeCargarViaje }: {
   fecha: string; hoy: string; camiones: CamionPlan[]; pedidos: PedidoPlan[]; canteras: string[]; segmentoListo: boolean; puedeCargar: boolean; puedeCargarViaje: boolean;
@@ -106,7 +106,12 @@ export function Planeacion({ fecha, hoy, camiones, pedidos: todosPedidos, canter
           {disponibles.length} {disponibles.length === 1 ? 'camión disponible' : 'camiones disponibles'}
           {noDisponibles.length > 0 && ` (${noDisponibles.length} no disponible${noDisponibles.length === 1 ? '' : 's'})`} · {viajesDelDia} {viajesDelDia === 1 ? 'viaje' : 'viajes'} · {num2(m3Dia)} m³ planificados
         </span>
-        {puedeCargar && <button type="button" className="btn primary" style={{ marginLeft: 'auto' }} onClick={() => setVentana({ tipo: 'camion', camion: null })}>Agregar camión</button>}
+        {puedeCargar && (
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <button type="button" className="btn" onClick={() => setVentana({ tipo: 'copiar' })} disabled={!camiones.some((c) => c.viajes.length)} title="Pasar el itinerario de este día a otro">Copiar a otro día…</button>
+            <button type="button" className="btn primary" onClick={() => setVentana({ tipo: 'camion', camion: null })}>Agregar camión</button>
+          </span>
+        )}
       </div>
       <SegmentoTabs valor={seg} onChange={elegirSeg} contar={contar} />
       {!segmentoListo && <div className="banner">Para separar los pedidos en Minorista y Mayorista falta correr <b>0018_segmentos_costos.sql</b> en Supabase. Mientras tanto todo aparece como minorista.</div>}
@@ -259,6 +264,8 @@ export function Planeacion({ fecha, hoy, camiones, pedidos: todosPedidos, canter
         <Asignar fecha={fecha} camiones={disponibles} pedidos={pedidos} canteras={canteras} inicial={ventana} onCerrar={() => setVentana(null)} />
       )}
       {ventana?.tipo === 'camion' && <FormCamion camion={ventana.camion} onCerrar={() => setVentana(null)} />}
+      {ventana?.tipo === 'copiar' && <CopiarPlan fecha={fecha} hoy={hoy} hayPendientes={camiones.some((c) => c.viajes.some((v) => !v.hecho))}
+        onCerrar={() => setVentana(null)} alTerminar={(texto, destino) => { setVentana(null); setMsg({ tipo: 'good', texto }); if (destino) router.push(`/planeacion?fecha=${destino}`); }} />}
     </>
   );
 }
@@ -414,6 +421,48 @@ function Asignar({ fecha, camiones, pedidos, canteras, inicial, onCerrar }: {
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" className="btn" onClick={onCerrar}>Cancelar</button>
           <button type="button" className="btn primary" onClick={guardar} disabled={pending}>{pending ? 'Guardando…' : Number(veces) > 1 ? `Agregar ${Number(veces)} viajes` : 'Agregar al itinerario'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ───────────── copiar el plan a otro día ─────────────
+function CopiarPlan({ fecha, hoy, hayPendientes, onCerrar, alTerminar }: {
+  fecha: string; hoy: string; hayPendientes: boolean; onCerrar: () => void; alTerminar: (texto: string, destino: string) => void;
+}) {
+  const [hasta, setHasta] = useState(addDays(fecha > hoy ? fecha : hoy, 1));
+  const [modo, setModo] = useState<'todos' | 'copiar-pendientes' | 'mover-pendientes'>(hayPendientes && fecha < hoy ? 'mover-pendientes' : 'todos');
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  function copiar_() {
+    setError(null);
+    start(async () => {
+      const r = await copiarPlan({ desde: fecha, hasta, soloPendientes: modo !== 'todos', mover: modo === 'mover-pendientes' });
+      if (r.error) { setError(r.error); return; }
+      const n = r.copiados ?? 0;
+      alTerminar(`${n} ${n === 1 ? 'viaje pasó' : 'viajes pasaron'} al ${fmtFecha(hasta)}${r.salteados ? ` · ${r.salteados} no se pasaron (pedido cerrado o camión no disponible)` : ''}.`, hasta);
+    });
+  }
+  const opcion = (v: typeof modo, titulo: string, detalle: string, deshabilitada = false) => (
+    <label className="row" style={{ gap: 8, alignItems: 'flex-start', opacity: deshabilitada ? 0.5 : 1 }}>
+      <input type="radio" name="modo-copia" checked={modo === v} disabled={deshabilitada} onChange={() => setModo(v)} style={{ minHeight: 'auto', marginTop: 4 }} />
+      <span><strong>{titulo}</strong><br /><span className="muted" style={{ fontSize: 12.5 }}>{detalle}</span></span>
+    </label>
+  );
+  return (
+    <Modal titulo={`Pasar el plan del ${fmtFecha(fecha)} a otro día`} onCerrar={onCerrar}>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <label className="fld">Día de destino<input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} /></label>
+        {opcion('todos', 'Copiar todos los viajes', 'Repite el itinerario completo (útil para días parecidos). Quedan como no hechos.')}
+        {opcion('copiar-pendientes', 'Copiar solo los que no se hicieron', 'Deja el día original como está.', !hayPendientes)}
+        {opcion('mover-pendientes', 'Mover los que no se hicieron', 'Pasan al nuevo día y se sacan del original (lo que no llegó a hacerse).', !hayPendientes)}
+        <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>Se mantienen camión, orden, pedido, material, metros, cantera y chofer del día. Los viajes se suman después de los que ya tenga ese día.</p>
+        {error && <div className="banner err" style={{ margin: 0 }}>{error}</div>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" className="btn" onClick={onCerrar}>Cancelar</button>
+          <button type="button" className="btn primary" disabled={pending || !hasta} onClick={copiar_}>{pending ? 'Pasando…' : 'Pasar viajes'}</button>
         </div>
       </div>
     </Modal>

@@ -139,6 +139,60 @@ export async function marcarHecho(id: string, hecho: boolean): Promise<Resultado
   return error ? falla(error) : listo();
 }
 
+/** Copia (o mueve) el itinerario de un día a otro: mismos camiones, orden, pedidos, materiales, metros y canteras.
+ *  `soloPendientes` deja afuera los viajes ya hechos; con `mover` los viajes pasan al nuevo día (útil para lo que no llegó a hacerse).
+ *  Se saltean los camiones no disponibles y los pedidos que ya no están abiertos. */
+export async function copiarPlan(o: { desde: string; hasta: string; soloPendientes: boolean; mover: boolean }): Promise<Resultado & { copiados?: number; salteados?: number }> {
+  const a = await permitido();
+  if (!a) return { error: SIN_PERMISO };
+  if (!FECHA.test(o.desde) || !FECHA.test(o.hasta)) return { error: 'Fecha inválida.' };
+  if (o.desde === o.hasta) return { error: 'Elegí un día distinto al actual.' };
+  const mover = o.mover && o.soloPendientes; // mover solo tiene sentido con lo que no se hizo
+  const supabase = await createClient();
+
+  const { data: origen, error: e1 } = await supabase.from('plan_viajes').select('*').eq('fecha', o.desde).order('camion_id').order('orden');
+  if (e1) return falla(e1);
+  const candidatos = (origen ?? []).filter((v) => !o.soloPendientes || !v.hecho);
+  if (!candidatos.length) return { error: o.soloPendientes ? 'No hay viajes pendientes en ese día.' : 'Ese día no tiene viajes para copiar.' };
+
+  const [pedRes, camRes, destRes] = await Promise.all([
+    supabase.from('pedidos').select('id,segmento,estado').in('id', [...new Set(candidatos.map((v) => v.pedido_id as string))]),
+    supabase.from('camiones').select('*').in('id', [...new Set(candidatos.map((v) => v.camion_id as string))]),
+    supabase.from('plan_viajes').select('camion_id,orden').eq('fecha', o.hasta),
+  ]);
+  if (pedRes.error) return falla(pedRes.error);
+  if (camRes.error) return falla(camRes.error);
+  const abiertos = new Map((pedRes.data ?? []).filter((p) => p.estado === 'pendiente' || p.estado === 'realizado').map((p) => [p.id as string, p.segmento as string | undefined]));
+  const camiones = new Map((camRes.data ?? []).filter((c) => c.disponible).map((c) => [c.id as string, c]));
+  const ultimo = new Map<string, number>();
+  for (const r of destRes.data ?? []) ultimo.set(r.camion_id as string, Math.max(ultimo.get(r.camion_id as string) ?? 0, r.orden as number));
+
+  const validos = candidatos.filter((v) => {
+    if (!abiertos.has(v.pedido_id) || !camiones.has(v.camion_id)) return false;
+    return !(camiones.get(v.camion_id)?.solo_mayorista && abiertos.get(v.pedido_id) === 'minorista');
+  });
+  if (!validos.length) return { error: 'Ningún viaje se pudo copiar: sus pedidos ya no están abiertos o sus camiones no están disponibles.' };
+
+  const filas = validos.map((v) => {
+    const orden = (ultimo.get(v.camion_id) ?? 0) + 1;
+    ultimo.set(v.camion_id, orden);
+    return {
+      fecha: o.hasta, camion_id: v.camion_id, orden, pedido_id: v.pedido_id, material_id: v.material_id, cantidad: v.cantidad, autor: a.nombre || a.email,
+      ...(v.cantera ? { cantera: v.cantera } : {}),
+    };
+  });
+  const { error: e2 } = await supabase.from('plan_viajes').insert(filas);
+  if (e2) return falla(e2);
+
+  // El chofer del día de cada camión viaja con el itinerario (si el día de destino no tiene uno propio)
+  const { data: ch } = await supabase.from('plan_choferes').select('camion_id,chofer').eq('fecha', o.desde).in('camion_id', [...new Set(validos.map((v) => v.camion_id as string))]);
+  if (ch?.length) await supabase.from('plan_choferes').upsert(ch.map((c) => ({ fecha: o.hasta, camion_id: c.camion_id, chofer: c.chofer })), { onConflict: 'fecha,camion_id', ignoreDuplicates: true });
+
+  if (mover) await supabase.from('plan_viajes').delete().in('id', validos.map((v) => v.id as string));
+  listo();
+  return { error: null, copiados: validos.length, salteados: candidatos.length - validos.length };
+}
+
 /** Intercambia de lugar dos viajes del mismo camión y día (los que se ven uno al lado del otro en la pestaña activa). */
 export async function intercambiarViajes(a: string, b: string): Promise<Resultado> {
   if (!(await permitido())) return { error: SIN_PERMISO };
