@@ -17,6 +17,7 @@ Chofer → WhatsApp → Admin carga en Sheets → Apps Script (automático) → 
 | Migraciones 0002 (certificados atómicos), 0003 (clave de remito por fecha) | corridas en producción |
 | Migración 0004 (`sync_log`, pantalla Sistema) | **falta correr** si la pantalla Sistema avisa que falta la tabla; va ANTES que la 0005 |
 | Migración 0005 (permisos por usuario y por sección, pantalla Usuarios) | corrida |
+| Migración 0018 (Planeación Minorista / Mayorista, camiones "solo minorista" y lista de costos por cantera, de la hoja PRECIOS COSTO) | **nueva — falta correr**, después de la 0012 y la 0010 |
 | Migración 0017 (Planeación: "Cargar viaje" desde el itinerario vincula solo el remito al pedido y marca el viaje hecho) | **nueva — falta correr**, después de la 0014 |
 | Migraciones 0015 y 0016 (Cobranzas de clientes imputadas a certificados aprobados + Caja diaria con permiso propio "Caja") | **nuevas — falta correr**, en orden: primero la 0015 y después la 0016 |
 | Migración 0014 (Planeación: al marcar un viaje como hecho, sus metros suman al pedido y lo mueven de columna) | **nueva — falta correr**, después de la 0011 y la 0012 |

@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getAcceso } from '@/lib/permisos';
 import { addDays, hoyAR } from '@/lib/periodo';
 import { SinAcceso } from '@/components/sin-acceso';
-import { Planeacion, type CamionPlan, type PedidoPlan, type ViajePlan } from './planeacion';
+import { Planeacion, type CamionPlan, type PedidoPlan, type ViajePlan, type Segmento } from './planeacion';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +21,7 @@ export default async function PaginaPlaneacion({ searchParams }: { searchParams:
   const fecha = pedida && /^\d{4}-\d{2}-\d{2}$/.test(pedida) ? pedida : hoy;
   const supabase = await createClient();
 
-  const camionesRes = await supabase.from('camiones').select('id,patente,chofer,capacidad,disponible').order('patente');
+  const camionesRes = await supabase.from('camiones').select('*').order('patente');
   if (camionesRes.error) {
     return (
       <>
@@ -60,6 +60,13 @@ export default async function PaginaPlaneacion({ searchParams }: { searchParams:
   const canteras = [...uso].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map((e) => e[0]);
   const abiertos = (abiertosRes.data ?? []) as unknown as FilaPedido[];
 
+  // Minorista / mayorista de cada pedido (migración 0018); sin ella todo cae en la pestaña Minorista
+  const todosIds = [...new Set([...abiertos.map((p) => p.id), ...viajes.map((v) => v.pedido_id)])];
+  const segRes = todosIds.length ? await supabase.from('pedidos').select('id,segmento').in('id', todosIds) : { data: [], error: null };
+  const segmentoListo = !segRes.error;
+  const segmentoDe = new Map<string, Segmento>(segRes.error ? [] : ((segRes.data ?? []) as { id: string; segmento: Segmento }[]).map((r) => [r.id, r.segmento]));
+  const seg = (id: string): Segmento => segmentoDe.get(id) ?? 'minorista';
+
   // Pedidos que aparecen en el itinerario pero ya no están abiertos (completados o cancelados): se traen aparte para poder mostrarlos
   const abiertosIds = new Set(abiertos.map((p) => p.id));
   const faltantes = [...new Set(viajes.map((v) => v.pedido_id))].filter((id) => !abiertosIds.has(id));
@@ -79,7 +86,7 @@ export default async function PaginaPlaneacion({ searchParams }: { searchParams:
   for (const v of viajes) if (!v.hecho) planificado.set(`${v.pedido_id}|${v.material_id}`, (planificado.get(`${v.pedido_id}|${v.material_id}`) ?? 0) + Number(v.cantidad));
 
   const pedidos: PedidoPlan[] = abiertos.map((p) => ({
-    id: p.id, numero: p.numero, cliente: p.clientes?.razon_social ?? '—', obra: p.obras?.nombre ?? null, prioridad: p.prioridad, fechaEntrega: p.fecha_entrega,
+    id: p.id, numero: p.numero, cliente: p.clientes?.razon_social ?? '—', obra: p.obras?.nombre ?? null, prioridad: p.prioridad, fechaEntrega: p.fecha_entrega, segmento: seg(p.id),
     items: avance.filter((a) => a.pedido_id === p.id).map((a) => ({
       materialId: a.material_id, material: materiales.get(a.material_id)?.nombre ?? '—', unidad: materiales.get(a.material_id)?.unidad ?? 'm3',
       pedido: Number(a.pedido), entregado: Number(a.entregado), planificado: planificado.get(`${p.id}|${a.material_id}`) ?? 0,
@@ -92,12 +99,12 @@ export default async function PaginaPlaneacion({ searchParams }: { searchParams:
   const choferDia = new Map((choferesRes.data ?? []).map((c) => [c.camion_id as string, c.chofer as string]));
   const camiones: CamionPlan[] = (camionesRes.data ?? []).map((c) => ({
     id: c.id as string, patente: c.patente as string, chofer: (c.chofer as string | null) ?? '', choferDia: choferDia.get(c.id as string) ?? null,
-    capacidad: Number(c.capacidad), disponible: c.disponible as boolean,
+    capacidad: Number(c.capacidad), disponible: c.disponible as boolean, soloMayorista: !!c.solo_mayorista,
     viajes: viajes.filter((v) => v.camion_id === c.id).map((v): ViajePlan => {
       const ped = info.get(v.pedido_id);
       return {
         id: v.id, orden: v.orden, pedidoId: v.pedido_id, materialId: v.material_id, material: materiales.get(v.material_id)?.nombre ?? '—',
-        unidad: materiales.get(v.material_id)?.unidad ?? 'm3', cantidad: Number(v.cantidad), hecho: v.hecho, cantera: v.cantera ?? '', cargado: !!v.remito_id,
+        unidad: materiales.get(v.material_id)?.unidad ?? 'm3', cantidad: Number(v.cantidad), hecho: v.hecho, cantera: v.cantera ?? '', cargado: !!v.remito_id, segmento: seg(v.pedido_id),
         numeroPedido: ped?.numero ?? 0, cliente: ped?.cliente ?? '—', obra: ped?.obra ?? null,
       };
     }),
@@ -107,7 +114,7 @@ export default async function PaginaPlaneacion({ searchParams }: { searchParams:
     <>
       <h1>Planeación</h1>
       <p className="lede">Qué camiones salen, con qué chofer y a dónde, y cuánto avanza cada pedido con los viajes del día.</p>
-      <Planeacion fecha={fecha} hoy={hoy} camiones={camiones} pedidos={pedidos} canteras={canteras} puedeCargar={acceso.puedeEscribir('pedidos')} puedeCargarViaje={acceso.puedeEscribir('viajes')} />
+      <Planeacion fecha={fecha} hoy={hoy} camiones={camiones} pedidos={pedidos} canteras={canteras} segmentoListo={segmentoListo} puedeCargar={acceso.puedeEscribir('pedidos')} puedeCargarViaje={acceso.puedeEscribir('viajes')} />
     </>
   );
 }

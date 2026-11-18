@@ -18,6 +18,8 @@ async function autor() {
 export interface PedidoInput {
   id: string | null; clienteId: string; obraId: string | null; prioridad: Prioridad; fechaEntrega: string | null;
   items: { materialId: string; cantidad: number }[];
+  /** Minorista (viajes de hasta 12 m³) o mayorista. Define en qué pestaña de Planeación aparece. */
+  segmento?: 'minorista' | 'mayorista';
 }
 
 export async function guardarPedido(p: PedidoInput): Promise<Resultado> {
@@ -34,12 +36,19 @@ export async function guardarPedido(p: PedidoInput): Promise<Resultado> {
   if (new Set(items.map((i) => i.materialId)).size !== items.length) return { error: 'Hay un material repetido.' };
 
   const supabase = await createClient();
-  const { error } = await supabase.rpc('guardar_pedido', {
+  const { data, error } = await supabase.rpc('guardar_pedido', {
     p_id: p.id, p_cliente: p.clienteId, p_obra: p.obraId || null, p_prioridad: p.prioridad, p_fecha: p.fechaEntrega || null,
     p_items: items.map((i) => ({ material_id: i.materialId, cantidad: i.cantidad })), p_autor: a.nombre || a.email,
   });
   if (error) return { error: error.message };
   revalidatePath('/pedidos');
+  revalidatePath('/planeacion');
+  // El segmento se guarda aparte: así el pedido se guarda igual aunque todavía no esté corrida la migración 0018
+  const id = (typeof data === 'string' ? data : p.id) as string | null;
+  if (p.segmento && id) {
+    const { error: e2 } = await supabase.from('pedidos').update({ segmento: p.segmento }).eq('id', id);
+    if (e2 && p.segmento === 'mayorista') return { error: 'El pedido se guardó, pero no quedó como mayorista: falta correr la migración 0018_segmentos_costos.sql en Supabase.' };
+  }
   return { error: null };
 }
 

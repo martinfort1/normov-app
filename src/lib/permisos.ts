@@ -70,6 +70,8 @@ export function rutasVisibles(a: Acceso): string[] {
   if ((['viajes', 'combustible', 'proveedores', 'cheques'] as const).some((m) => a.puedeEscribir(m))) rutas.push('/cargar');
   // Planeación usa el permiso de Pedidos
   if (a.puedeVer('pedidos')) rutas.push('/planeacion');
+  // Precios (venta y costo) usa el permiso de Viajes: es lo que alimenta el precio y el costo al cargar un viaje
+  if (a.puedeVer('viajes')) rutas.push('/precios');
   if (a.esAdmin) rutas.push('/cashflow', '/usuarios');
   return rutas;
 }

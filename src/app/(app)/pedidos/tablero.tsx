@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { fecha as fmtFecha, num2 } from '@/lib/format';
 import { colorMaterial } from '@/lib/colores';
 import { Modal } from '@/components/modal';
+import { SegmentoTabs, useVista, type Vista } from '@/components/segmento-tabs';
 import {
   guardarPedido, moverPedido, cerrarPedido, registrarEntregado, sugerirViajes, viajesDelPedido, vincularViajes, desvincularViaje,
   type Prioridad, type ViajeLista, type Columna,
@@ -15,6 +16,7 @@ export interface PedidoCard {
   /** entregado = lo mayor entre lo anotado a mano y lo que suman los viajes vinculados (conRemito) */
   items: { itemId: string; materialId: string; material: string; unidad: string; pedido: number; entregado: number; conRemito: number }[];
   viajes: number; pct: number;
+  segmento: 'minorista' | 'mayorista';
   /** Próximo día con viajes planificados todavía sin hacer (Planeación), o null si no hay */
   plan: { fecha: string; m3: number; viajes: number; camiones: string[] } | null;
 }
@@ -55,13 +57,21 @@ const faltan = (p: PedidoCard) => p.items.reduce((s, i) => s + Math.max(0, i.ped
 
 const unidadTxt = (u: string) => (u === 'm3' ? 'm³' : u);
 
-export function Tablero({ pedidos, cat, hoy, planListo, puedeCargar, puedeVincular, puedeCargarViaje, entregadoListo }: { pedidos: PedidoCard[]; cat: Catalogos; hoy: string; planListo: boolean; puedeCargar: boolean; puedeVincular: boolean; puedeCargarViaje: boolean; entregadoListo: boolean }) {
+export function Tablero({ pedidos: todos, cat, hoy, planListo, puedeCargar, puedeVincular, puedeCargarViaje, entregadoListo }: { pedidos: PedidoCard[]; cat: Catalogos; hoy: string; planListo: boolean; puedeCargar: boolean; puedeVincular: boolean; puedeCargarViaje: boolean; entregadoListo: boolean }) {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   const [editando, setEditando] = useState<PedidoCard | 'nuevo' | null>(null);
   const [vinculando, setVinculando] = useState<PedidoCard | null>(null);
   const [arrastrando, setArrastrando] = useState<string | null>(null);
   const [sobre, setSobre] = useState<Columna | null>(null);
+
+  // Vista: Todos / Minorista / Mayorista (se recuerda en este navegador)
+  const [vista, elegirVista] = useVista('normov.pedidos.vista');
+  const pedidos = todos.filter((p) => vista === 'todos' || p.segmento === vista);
+  const contar = (v: Vista) => {
+    const n = todos.filter((p) => (v === 'todos' || p.segmento === v) && p.estado !== 'remitado').length;
+    return `${n} ${n === 1 ? 'abierto' : 'abiertos'}`;
+  };
 
   const pendientes = pedidos.filter((p) => p.estado === 'pendiente');
   const realizados = pedidos.filter((p) => p.estado === 'realizado');
@@ -127,6 +137,7 @@ export function Tablero({ pedidos, cat, hoy, planListo, puedeCargar, puedeVincul
         </span>
         {!puedeCargar && <span className="note" style={{ margin: 0 }}>Solo lectura: no tenés permiso para cargar pedidos.</span>}
       </div>
+      <SegmentoTabs valor={vista} onChange={elegirVista} contar={contar} />
       {!entregadoListo && <div className="banner">Para anotar los metros entregados y usar la columna final falta correr <b>0011_pedidos_entregado.sql</b> en Supabase.</div>}
       {msg && <div className="banner err">{msg}</div>}
       <div className="kanban" aria-busy={pending}>
@@ -135,7 +146,7 @@ export function Tablero({ pedidos, cat, hoy, planListo, puedeCargar, puedeVincul
         {columna('remitado', 'Realizado', remitados, 'Pedidos con todo entregado, listos para completar.')}
       </div>
 
-      {editando && <Formulario pedido={editando === 'nuevo' ? null : editando} cat={cat} onCerrar={() => setEditando(null)} />}
+      {editando && <Formulario pedido={editando === 'nuevo' ? null : editando} cat={cat} segmentoInicial={vista === 'todos' ? undefined : vista} onCerrar={() => setEditando(null)} />}
       {vinculando && <Vincular pedido={vinculando} puedeVincular={puedeVincular} puedeCargarViaje={puedeCargarViaje} onCerrar={() => setVinculando(null)} />}
     </>
   );
@@ -164,6 +175,7 @@ function Tarjeta({ p, hoy, planListo, puedeCargar, puedeVincular, puedeCargarVia
       <div className="kcard-top">
         <span className="muted">#{p.numero}</span>
         <span className={`pill ${pr.clase}`}>{pr.label}</span>
+        {p.segmento === 'mayorista' && <span className="pill bronze" title="Pedido mayorista: viajes de más de 12 m³">Mayorista</span>}
         <span className={`pill ${pl.clase}`} style={{ marginLeft: 'auto' }}>{pl.texto}</span>
       </div>
       <div className="kcard-cli">{p.cliente}</div>
@@ -273,7 +285,7 @@ function Entregado({ item, alEscribir, alError }: { item: PedidoCard['items'][nu
 // ───────────── ventana ─────────────
 
 // ───────────── crear / editar ─────────────
-function Formulario({ pedido, cat, onCerrar }: { pedido: PedidoCard | null; cat: Catalogos; onCerrar: () => void }) {
+function Formulario({ pedido, cat, segmentoInicial, onCerrar }: { pedido: PedidoCard | null; cat: Catalogos; segmentoInicial?: 'minorista' | 'mayorista'; onCerrar: () => void }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [clienteId, setClienteId] = useState(pedido?.clienteId ?? '');
@@ -283,6 +295,14 @@ function Formulario({ pedido, cat, onCerrar }: { pedido: PedidoCard | null; cat:
   const [items, setItems] = useState<{ materialId: string; cantidad: string }[]>(
     pedido?.items.map((i) => ({ materialId: i.materialId, cantidad: String(i.pedido) })) ?? [{ materialId: '', cantidad: '' }],
   );
+  // Segmento: se sugiere por el material más grande (más de 12 m³ = mayorista) hasta que se elige a mano
+  // Si se está viendo una pestaña (Minorista o Mayorista), el pedido nuevo nace de ese tipo
+  const [segmento, setSegmento] = useState<'minorista' | 'mayorista'>(pedido?.segmento ?? segmentoInicial ?? 'minorista');
+  const [segTocado, setSegTocado] = useState(!!pedido || !!segmentoInicial);
+  function cambiarItems(nuevo: { materialId: string; cantidad: string }[]) {
+    setItems(nuevo);
+    if (!segTocado) setSegmento(nuevo.some((i) => parseFloat(i.cantidad.replace(',', '.')) > 12) ? 'mayorista' : 'minorista');
+  }
   const obras = cat.obras.filter((o) => o.clienteId === clienteId);
   const unidad = (id: string) => cat.materiales.find((m) => m.id === id)?.unidad ?? '';
 
@@ -290,7 +310,7 @@ function Formulario({ pedido, cat, onCerrar }: { pedido: PedidoCard | null; cat:
     setError(null);
     const lista = items.filter((i) => i.materialId || i.cantidad).map((i) => ({ materialId: i.materialId, cantidad: parseFloat(i.cantidad.replace(',', '.')) }));
     start(async () => {
-      const r = await guardarPedido({ id: pedido?.id ?? null, clienteId, obraId: obraId || null, prioridad, fechaEntrega: fechaEntrega || null, items: lista });
+      const r = await guardarPedido({ id: pedido?.id ?? null, clienteId, obraId: obraId || null, prioridad, fechaEntrega: fechaEntrega || null, items: lista, segmento });
       if (r.error) setError(r.error); else onCerrar();
     });
   }
@@ -320,16 +340,23 @@ function Formulario({ pedido, cat, onCerrar }: { pedido: PedidoCard | null; cat:
             <input type="date" value={fechaEntrega} onChange={(e) => setFechaEntrega(e.target.value)} />
           </label>
         </div>
+        <label className="fld">Tipo de pedido
+          <select value={segmento} onChange={(e) => { setSegmento(e.target.value as 'minorista' | 'mayorista'); setSegTocado(true); }}>
+            <option value="minorista">Minorista (viajes de hasta 12 m³)</option>
+            <option value="mayorista">Mayorista (viajes de más de 12 m³)</option>
+          </select>
+          <span className="muted" style={{ fontSize: 12 }}>Define en qué pestaña de Planeación aparece y qué camiones lo pueden hacer.</span>
+        </label>
         <div className="fld">Materiales y cantidades
           {items.map((it, n) => (
             <div key={n} style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-              <select value={it.materialId} onChange={(e) => setItems(items.map((x, k) => (k === n ? { ...x, materialId: e.target.value } : x)))} style={{ flex: 1 }} aria-label="Material">
+              <select value={it.materialId} onChange={(e) => cambiarItems(items.map((x, k) => (k === n ? { ...x, materialId: e.target.value } : x)))} style={{ flex: 1 }} aria-label="Material">
                 <option value="">Material…</option>
                 {cat.materiales.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
               </select>
               <input type="text" inputMode="decimal" placeholder={unidad(it.materialId) || 'Cantidad'} value={it.cantidad} style={{ width: 110 }} aria-label="Cantidad"
-                onChange={(e) => setItems(items.map((x, k) => (k === n ? { ...x, cantidad: e.target.value } : x)))} />
-              <button type="button" className="btn sm" onClick={() => setItems(items.length > 1 ? items.filter((_, k) => k !== n) : [{ materialId: '', cantidad: '' }])} aria-label="Quitar material">✕</button>
+                onChange={(e) => cambiarItems(items.map((x, k) => (k === n ? { ...x, cantidad: e.target.value } : x)))} />
+              <button type="button" className="btn sm" onClick={() => cambiarItems(items.length > 1 ? items.filter((_, k) => k !== n) : [{ materialId: '', cantidad: '' }])} aria-label="Quitar material">✕</button>
             </div>
           ))}
           <button type="button" className="btn sm" style={{ marginTop: 8 }} onClick={() => setItems([...items, { materialId: '', cantidad: '' }])}>+ Agregar material</button>

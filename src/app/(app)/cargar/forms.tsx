@@ -5,6 +5,7 @@ import { guardarViaje, guardarCombustible, guardarProveedor, guardarCheque, type
 import { subirAdjunto, descartarAdjunto, type CarpetaAdjunto } from '@/lib/adjuntos';
 import { money } from '@/lib/format';
 import { precioDeLista } from '@/lib/precios';
+import { costoDeLista } from '@/lib/costos';
 
 // ───────────── motor de formularios ─────────────
 interface Campo {
@@ -165,8 +166,9 @@ export function FormViaje({ catalogo: cat, hoy, precarga }: { catalogo: Catalogo
     precio: '', cantera: precarga?.cantera ?? '', camion: precarga?.camion ?? '', chofer: precarga?.chofer ?? '', costoUnit: '', iva: '',
   };
   const delaLista = (v: Valores) => precioDeLista(cat.lista, { nombres: [v.cliente, v.razon], material: v.material, cantidad: n(v.cantidad), fecha: v.fecha });
-  // Si ya llegan material y cantidad (desde Planeación), el precio de la lista queda sugerido desde el principio
-  const inicial: Valores = { ...base, precio: delaLista(base) ? String(delaLista(base)!.precio) : '' };
+  const delCosto = (v: Valores) => costoDeLista(cat.costos, { cantera: v.cantera, material: v.material, fecha: v.fecha });
+  // Si ya llegan material y cantidad (desde Planeación), el precio de la lista queda sugerido desde el principio; el costo, con cantera y material
+  const inicial: Valores = { ...base, precio: delaLista(base) ? String(delaLista(base)!.precio) : '', costoUnit: delCosto(base) ? String(delCosto(base)!.costo) : '' };
   const campos: Campo[] = [
     { k: 'fecha', label: 'Fecha', tipo: 'date', req: true },
     { k: 'remito', label: 'N° remito', tipo: 'text', ayuda: 'Dejalo vacío si el viaje no tiene remito: se guarda igual, como "(sin número)".' },
@@ -217,6 +219,11 @@ export function FormViaje({ catalogo: cat, hoy, precarga }: { catalogo: Catalogo
         if (!tocados.has('costoUnit') && hit.costoUnit > 0) sig.costoUnit = String(hit.costoUnit);
       }
     }
+    // El costo de la lista (cantera + material, vigente a la fecha) manda sobre el último usado
+    if ((k === 'cantera' || k === 'material' || k === 'fecha') && !tocados.has('costoUnit')) {
+      const c = delCosto(sig);
+      if (c) sig.costoUnit = String(c.costo);
+    }
     return sig;
   };
   const resumen = (v: Valores) => {
@@ -236,6 +243,10 @@ export function FormViaje({ catalogo: cat, hoy, precarga }: { catalogo: Catalogo
           </div>
         )}
         {!lista && n(v.cantidad) > 0 && v.material.trim() && cat.lista.length > 0 && <div className="muted" style={{ fontSize: 12.5 }}>Este cliente y material no están en la lista de precios: cargá el precio a mano.</div>}
+        {(() => {
+          const c = delCosto(v);
+          return c ? <div className="muted" style={{ fontSize: 12.5 }}>Costo de lista ({c.cantera}), vigente desde {c.desde.slice(8, 10)}/{c.desde.slice(5, 7)}/{c.desde.slice(0, 4)}: {money(c.costo)} por unidad{n(v.costoUnit) !== c.costo && n(v.costoUnit) > 0 ? ` · el costo cargado es distinto (${money(n(v.costoUnit))})` : ''}</div> : null;
+        })()}
         {hit && <div className="muted" style={{ fontSize: 12.5 }}>Último precio usado para este cliente y material: {money(hit.precio)}{hit.costoUnit > 0 ? ` · costo ${money(hit.costoUnit)}` : ''}</div>}
       </>
     );

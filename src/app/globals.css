@@ -252,3 +252,8 @@ header.top .in { max-width: none; padding-left: 20px; padding-right: 20px; }
 .plan-lbl { display: inline-block; min-width: 42px; margin-right: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
 .plan-desde { display: flex; align-items: center; margin-bottom: 2px; }
 .plan-cantera { width: 100%; max-width: 190px; text-align: left; text-transform: uppercase; }
+
+/* Interruptor Todos / Minorista / Mayorista: el contador se lee en la pestaña activa (que tiene fondo oscuro) y en las demás */
+.seg-tabs button { gap: 8px; }
+.seg-tabs .seg-n { font-size: 12px; font-weight: 500; opacity: .75; }
+.seg-tabs button[aria-pressed='true'] .seg-n { opacity: .9; color: inherit; }

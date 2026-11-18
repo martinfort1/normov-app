@@ -61,6 +61,11 @@ export default async function Pedidos() {
       planDe.set(r.pedido_id, p);
     }
   }
+  // Minorista / mayorista (migración 0018); sin ella todos se muestran como minoristas
+  const segRes = ids.length ? await supabase.from('pedidos').select('id,segmento').in('id', ids) : { data: [], error: null };
+  const segmentoDe = new Map<string, 'minorista' | 'mayorista'>(
+    segRes.error ? [] : ((segRes.data ?? []) as { id: string; segmento: 'minorista' | 'mayorista' }[]).map((r) => [r.id, r.segmento]),
+  );
   const [avanceRes, vinculosRes, clientesRes, obrasRes, materialesRes] = await Promise.all([
     pedirAvance(),
     ids.length ? supabase.from('pedido_remitos').select('pedido_id').in('pedido_id', ids) : Promise.resolve({ data: [], error: null }),
@@ -91,7 +96,7 @@ export default async function Pedidos() {
       id: f.id, numero: f.numero, clienteId: f.cliente_id, cliente: f.clientes?.razon_social ?? '—', obraId: f.obra_id, obra: f.obras?.nombre ?? null,
       prioridad: f.prioridad, fechaEntrega: f.fecha_entrega, estado: f.estado, items, viajes: viajes.get(f.id) ?? 0,
       pct: total > 0 ? Math.round((hecho / total) * 100) : 0,
-      plan: planDe.get(f.id) ?? null,
+      plan: planDe.get(f.id) ?? null, segmento: segmentoDe.get(f.id) ?? 'minorista',
     };
   }).sort((a, b) => RANGO[a.prioridad] - RANGO[b.prioridad] || (a.fechaEntrega ?? '9999').localeCompare(b.fechaEntrega ?? '9999') || a.numero - b.numero);
 

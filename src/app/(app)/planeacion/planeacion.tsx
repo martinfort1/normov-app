@@ -1,14 +1,19 @@
 'use client';
 import { useState, useTransition } from 'react';
+import { SegmentoTabs, useVista, type Vista } from '@/components/segmento-tabs';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { fecha as fmtFecha, num2 } from '@/lib/format';
 import { addDays } from '@/lib/periodo';
 import { colorMaterial } from '@/lib/colores';
 import { Modal } from '@/components/modal';
-import { agregarViaje, eliminarCamion, guardarCamion, marcarHecho, moverViaje, quitarViaje, setCantera, setChoferDelDia, setDisponible, type Resultado } from './actions';
+import { agregarViaje, eliminarCamion, guardarCamion, marcarHecho, intercambiarViajes, quitarViaje, setCantera, setChoferDelDia, setDisponible, type Resultado } from './actions';
+
+/** Minorista: viajes de hasta 12 m³. Mayorista: más de 12 m³. */
+export type Segmento = 'minorista' | 'mayorista';
 
 export interface ViajePlan {
+  segmento: Segmento;
   id: string; orden: number; pedidoId: string; materialId: string; material: string; unidad: string; cantidad: number; hecho: boolean;
   numeroPedido: number; cliente: string; obra: string | null;
   /** Punto de retiro ("Desde"); el destino ("Hasta") es el cliente / obra */
@@ -18,8 +23,11 @@ export interface ViajePlan {
 }
 export interface CamionPlan {
   id: string; patente: string; chofer: string; choferDia: string | null; capacidad: number; disponible: boolean; viajes: ViajePlan[];
+  /** Camión grande: no hace viajes de pedidos minoristas (los chicos hacen de los dos tipos) */
+  soloMayorista: boolean;
 }
 export interface PedidoPlan {
+  segmento: Segmento;
   id: string; numero: number; cliente: string; obra: string | null; prioridad: string; fechaEntrega: string | null;
   items: { materialId: string; material: string; unidad: string; pedido: number; entregado: number; planificado: number }[];
 }
@@ -50,13 +58,15 @@ async function copiar(texto: string): Promise<boolean> {
 
 type Ventana = { tipo: 'asignar'; camionId?: string; pedidoId?: string; materialId?: string } | { tipo: 'camion'; camion: CamionPlan | null } | null;
 
-export function Planeacion({ fecha, hoy, camiones, pedidos, canteras, puedeCargar, puedeCargarViaje }: {
-  fecha: string; hoy: string; camiones: CamionPlan[]; pedidos: PedidoPlan[]; canteras: string[]; puedeCargar: boolean; puedeCargarViaje: boolean;
+export function Planeacion({ fecha, hoy, camiones, pedidos: todosPedidos, canteras, segmentoListo, puedeCargar, puedeCargarViaje }: {
+  fecha: string; hoy: string; camiones: CamionPlan[]; pedidos: PedidoPlan[]; canteras: string[]; segmentoListo: boolean; puedeCargar: boolean; puedeCargarViaje: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ tipo: 'bad' | 'good'; texto: string } | null>(null);
   const [ventana, setVentana] = useState<Ventana>(null);
+  // Vista activa: Todos / Minorista / Mayorista (se recuerda en este navegador)
+  const [seg, elegirSeg] = useVista('normov.plan.vista');
 
   function correr(fn: () => Promise<Resultado>, okTexto?: string) {
     setMsg(null);
@@ -67,10 +77,21 @@ export function Planeacion({ fecha, hoy, camiones, pedidos, canteras, puedeCarga
     });
   }
 
-  const disponibles = camiones.filter((c) => c.disponible);
+  // Cada vista muestra sus pedidos, los camiones que pueden hacerlos y, en cada camión, solo los viajes de ese tipo.
+  // Los camiones chicos hacen viajes de los dos tipos; los "solo mayorista" (grandes) no entran en Minorista. "Todos" muestra todo.
+  const delTipo = (s: Segmento) => seg === 'todos' || s === seg;
+  const pedidos = todosPedidos.filter((p) => delTipo(p.segmento));
   const noDisponibles = camiones.filter((c) => !c.disponible);
+  const aptos = (c: CamionPlan) => seg !== 'minorista' || !c.soloMayorista;
+  const disponibles = camiones.filter((c) => c.disponible && aptos(c)).map((c) => ({ ...c, viajes: c.viajes.filter((v) => delTipo(v.segmento)), todos: c.viajes }));
+  const ocultos = camiones.filter((c) => c.disponible && !aptos(c)).length;
   const viajesDelDia = disponibles.reduce((s, c) => s + c.viajes.length, 0);
   const m3Dia = disponibles.reduce((s, c) => s + c.viajes.reduce((a, v) => a + v.cantidad, 0), 0);
+  const contar = (s: Vista) => {
+    const p = todosPedidos.filter((x) => s === 'todos' || x.segmento === s).length;
+    const v = camiones.reduce((n, c) => n + c.viajes.filter((x) => s === 'todos' || x.segmento === s).length, 0);
+    return `${p} ${p === 1 ? 'pedido' : 'pedidos'} · ${v} ${v === 1 ? 'viaje' : 'viajes'}`;
+  };
   const href = (f: string) => `/planeacion?fecha=${f}`;
 
   return (
@@ -87,13 +108,16 @@ export function Planeacion({ fecha, hoy, camiones, pedidos, canteras, puedeCarga
         </span>
         {puedeCargar && <button type="button" className="btn primary" style={{ marginLeft: 'auto' }} onClick={() => setVentana({ tipo: 'camion', camion: null })}>Agregar camión</button>}
       </div>
+      <SegmentoTabs valor={seg} onChange={elegirSeg} contar={contar} />
+      {!segmentoListo && <div className="banner">Para separar los pedidos en Minorista y Mayorista falta correr <b>0018_segmentos_costos.sql</b> en Supabase. Mientras tanto todo aparece como minorista.</div>}
+      {seg === 'minorista' && ocultos > 0 && <p className="note" style={{ marginTop: 0 }}>{ocultos} {ocultos === 1 ? 'camión no se muestra porque es' : 'camiones no se muestran porque son'} solo para viajes mayoristas.</p>}
       {msg && <div className={`banner ${msg.tipo === 'bad' ? 'err' : 'ok'}`} role="status">{msg.texto}</div>}
 
       <div className="plan-grid" aria-busy={pending}>
         {/* ───────── pedidos pendientes ───────── */}
         <section className="plan-pedidos" aria-label="Pedidos pendientes">
           <h2 className="plan-h">Pedidos para entregar <span className="pill">{pedidos.length}</span></h2>
-          {!pedidos.length && <p className="muted">No hay pedidos pendientes.</p>}
+          {!pedidos.length && <p className="muted">No hay pedidos {seg === 'minorista' ? 'minoristas ' : seg === 'mayorista' ? 'mayoristas ' : ''}pendientes.</p>}
           {pedidos.map((p) => {
             const pr = PRIORIDAD[p.prioridad] ?? PRIORIDAD.normal;
             const pedido = p.items.reduce((s, i) => s + i.pedido, 0);
@@ -155,7 +179,7 @@ export function Planeacion({ fecha, hoy, camiones, pedidos, canteras, puedeCarga
                 <article key={c.id} className="panel plan-camion">
                   <header className="plan-camion-h">
                     <div>
-                      <div className="plan-patente">{c.patente}</div>
+                      <div className="plan-patente">{c.patente}{c.soloMayorista && <span className="pill" style={{ marginLeft: 8, fontSize: 11 }} title="Camión grande: no hace viajes minoristas">Solo mayorista</span>}</div>
                       <div className="muted" style={{ fontSize: 12.5 }}>Carga {num2(c.capacidad)} m³ por viaje</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
@@ -181,8 +205,8 @@ export function Planeacion({ fecha, hoy, camiones, pedidos, canteras, puedeCarga
                         </div>
                         {puedeCargar && (
                           <div className="plan-acc">
-                            <button type="button" className="btn sm" title="Subir" aria-label="Subir" disabled={pending || n === 0} onClick={() => correr(() => moverViaje(v.id, 'arriba'))}>↑</button>
-                            <button type="button" className="btn sm" title="Bajar" aria-label="Bajar" disabled={pending || n === c.viajes.length - 1} onClick={() => correr(() => moverViaje(v.id, 'abajo'))}>↓</button>
+                            <button type="button" className="btn sm" title="Subir" aria-label="Subir" disabled={pending || n === 0} onClick={() => correr(() => intercambiarViajes(v.id, c.viajes[n - 1].id))}>↑</button>
+                            <button type="button" className="btn sm" title="Bajar" aria-label="Bajar" disabled={pending || n === c.viajes.length - 1} onClick={() => correr(() => intercambiarViajes(v.id, c.viajes[n + 1].id))}>↓</button>
                             <button type="button" className={`btn sm${v.hecho ? ' primary' : ''}`} title={v.hecho ? 'Marcar como no hecho' : 'Marcar como hecho'} aria-label="Hecho" disabled={pending} onClick={() => correr(() => marcarHecho(v.id, !v.hecho), v.hecho ? `Viaje desmarcado: se restaron ${num2(v.cantidad)} ${u(v.unidad)} de ${v.material} al pedido #${v.numeroPedido}.` : `Viaje hecho: ${num2(v.cantidad)} ${u(v.unidad)} de ${v.material} ya suman al pedido #${v.numeroPedido}.`)}>✓</button>
                             <button type="button" className="btn sm danger" title="Quitar del itinerario" aria-label="Quitar" disabled={pending} onClick={() => correr(() => quitarViaje(v.id))}>✕</button>
                           </div>
@@ -194,7 +218,7 @@ export function Planeacion({ fecha, hoy, camiones, pedidos, canteras, puedeCarga
                   <div className="kacts">
                     {puedeCargar && <button type="button" className="btn sm" onClick={() => setVentana({ tipo: 'asignar', camionId: c.id })}>+ Agregar viaje</button>}
                     <button type="button" className="btn sm" onClick={async () => {
-                      const ok = await copiar(textoWhatsApp(c, fecha));
+                      const ok = await copiar(textoWhatsApp({ ...c, viajes: c.todos }, fecha)); // el itinerario completo del día, de los dos tipos
                       setMsg({ tipo: ok ? 'good' : 'bad', texto: ok ? `Itinerario de ${c.patente} copiado: pegalo en WhatsApp.` : 'No se pudo copiar el texto.' });
                     }}>Copiar para WhatsApp</button>
                     {puedeCargar && <button type="button" className="btn sm" onClick={() => setVentana({ tipo: 'camion', camion: c })}>Editar camión</button>}
@@ -206,7 +230,7 @@ export function Planeacion({ fecha, hoy, camiones, pedidos, canteras, puedeCarga
           {disponibles.some((c) => c.viajes.length) && (
             <p style={{ margin: '4px 0 16px' }}>
               <button type="button" className="btn" onClick={async () => {
-                const ok = await copiar(disponibles.filter((c) => c.viajes.length).map((c) => textoWhatsApp(c, fecha)).join('\n\n'));
+                const ok = await copiar(disponibles.filter((c) => c.todos.length).map((c) => textoWhatsApp({ ...c, viajes: c.todos }, fecha)).join('\n\n'));
                 setMsg({ tipo: ok ? 'good' : 'bad', texto: ok ? 'Itinerarios de todos los camiones copiados: pegalos en WhatsApp.' : 'No se pudo copiar. Probá desde cada camión.' });
               }}>Copiar todos los itinerarios</button>
             </p>
@@ -301,15 +325,19 @@ function Asignar({ fecha, camiones, pedidos, canteras, inicial, onCerrar }: {
   const pedido = pedidos.find((p) => p.id === pedidoId);
   const [materialId, setMaterialId] = useState(inicial.materialId ?? '');
   const camion = camiones.find((c) => c.id === camionId);
+  // A un pedido minorista no se le asignan camiones grandes ("solo mayorista")
+  const camionesAptos = camiones.filter((c) => !(pedido?.segmento === 'minorista' && c.soloMayorista));
   const item = pedido?.items.find((i) => i.materialId === materialId);
   const faltaSinPlan = item ? Math.max(0, item.pedido - item.entregado - item.planificado) : 0;
   const sugerida = (c?: CamionPlan, i?: typeof item) => (c && i ? Math.min(c.capacidad, Math.max(0, i.pedido - i.entregado - i.planificado)) || c.capacidad : 0);
   const [cantidad, setCantidad] = useState('');
+  const [veces, setVeces] = useState('1');
 
   // Al elegir pedido: si tiene un solo material, queda elegido; la cantidad se sugiere con la capacidad del camión y lo que falta
   function elegirPedido(id: string) {
     setPedidoId(id);
     const p = pedidos.find((x) => x.id === id);
+    if (p?.segmento === 'minorista' && camion?.soloMayorista) setCamionId(''); // el camión elegido no puede con este pedido
     const m = p && p.items.length === 1 ? p.items[0].materialId : '';
     setMaterialId(m);
     setCantidad(m ? String(sugerida(camion, p?.items[0])) : '');
@@ -329,8 +357,10 @@ function Asignar({ fecha, camiones, pedidos, canteras, inicial, onCerrar }: {
     const n = parseFloat(cantidad.replace(',', '.'));
     if (!camionId || !pedidoId || !materialId) { setError('Elegí el pedido, el material y el camión.'); return; }
     if (!(n > 0)) { setError('Poné los m³ del viaje.'); return; }
+    const k = Number(veces);
+    if (!Number.isInteger(k) || k < 1 || k > 30) { setError('La cantidad de viajes tiene que ser un número entero de 1 a 30.'); return; }
     start(async () => {
-      const r = await agregarViaje({ fecha, camionId, pedidoId, materialId, cantidad: n, cantera });
+      const r = await agregarViaje({ fecha, camionId, pedidoId, materialId, cantidad: n, cantera, repetir: k });
       if (r.error) setError(r.error); else onCerrar();
     });
   }
@@ -353,21 +383,37 @@ function Asignar({ fecha, camiones, pedidos, canteras, inicial, onCerrar }: {
         <label className="fld">Camión
           <select value={camionId} onChange={(e) => elegirCamion(e.target.value)}>
             <option value="">Elegí un camión…</option>
-            {camiones.map((c) => <option key={c.id} value={c.id}>{c.patente} · carga {num2(c.capacidad)} m³ · {c.viajes.length} {c.viajes.length === 1 ? 'viaje' : 'viajes'}</option>)}
+            {camionesAptos.map((c) => <option key={c.id} value={c.id}>{c.patente} · carga {num2(c.capacidad)} m³ · {c.viajes.length} {c.viajes.length === 1 ? 'viaje' : 'viajes'}</option>)}
           </select>
         </label>
         <label className="fld">Desde (cantera donde retira)
           <input type="text" list="dl-asignar-cantera" value={cantera} onChange={(e) => setCanteraTxt(e.target.value)} placeholder="Elegí o escribí una cantera" autoComplete="off" />
           <datalist id="dl-asignar-cantera">{canteras.map((c) => <option key={c} value={c} />)}</datalist>
         </label>
-        <label className="fld">m³ de este viaje
-          <input type="text" inputMode="decimal" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
-          {camion && <span className="muted" style={{ fontSize: 12 }}>Máximo {num2(camion.capacidad)} m³ (lo que carga este camión).{item ? ` Sin asignar de este material: ${num2(faltaSinPlan)}.` : ''}</span>}
-        </label>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <label className="fld">m³ de cada viaje
+            <input type="text" inputMode="decimal" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
+          </label>
+          <label className="fld">Cantidad de viajes
+            <input type="text" inputMode="numeric" value={veces} onChange={(e) => setVeces(e.target.value.replace(/\D/g, ''))} aria-describedby="ayuda-viajes" />
+          </label>
+        </div>
+        {(() => {
+          const n = parseFloat(cantidad.replace(',', '.')), k = Number(veces);
+          const total = n > 0 && k > 0 ? n * k : 0;
+          return (
+            <span id="ayuda-viajes" className="muted" style={{ fontSize: 12, marginTop: -4 }}>
+              {k > 1 && total > 0 ? <><strong>{k} viajes iguales de {num2(n)} m³ = {num2(total)} m³</strong> (uno detrás de otro en el itinerario). </> : ''}
+              {camion ? `Máximo ${num2(camion.capacidad)} m³ por viaje (lo que carga este camión). ` : ''}
+              {item ? `Sin asignar de este material: ${num2(faltaSinPlan)} m³.` : ''}
+              {item && total > faltaSinPlan + 0.001 ? <span style={{ color: 'var(--warn)' }}> Lo que cargás supera lo que falta asignar.</span> : null}
+            </span>
+          );
+        })()}
         {error && <div className="banner err" style={{ margin: 0 }}>{error}</div>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" className="btn" onClick={onCerrar}>Cancelar</button>
-          <button type="button" className="btn primary" onClick={guardar} disabled={pending}>{pending ? 'Guardando…' : 'Agregar al itinerario'}</button>
+          <button type="button" className="btn primary" onClick={guardar} disabled={pending}>{pending ? 'Guardando…' : Number(veces) > 1 ? `Agregar ${Number(veces)} viajes` : 'Agregar al itinerario'}</button>
         </div>
       </div>
     </Modal>
@@ -382,11 +428,18 @@ function FormCamion({ camion, onCerrar }: { camion: CamionPlan | null; onCerrar:
   const [chofer, setChofer] = useState(camion?.chofer ?? '');
   const [capacidad, setCapacidad] = useState(camion ? String(camion.capacidad) : '');
   const [disponible, setDisponible_] = useState(camion?.disponible ?? true);
+  const [soloMayorista, setSoloMayorista] = useState(camion?.soloMayorista ?? false);
+  const [mayTocado, setMayTocado] = useState(!!camion);
+  // Un camión nuevo que carga más de 12 m³ se sugiere como "solo mayorista" (hasta que se decide a mano)
+  function cambiarCapacidad(v: string) {
+    setCapacidad(v);
+    if (!mayTocado) setSoloMayorista(parseFloat(v.replace(',', '.')) > 12);
+  }
 
   function guardar() {
     setError(null);
     start(async () => {
-      const r = await guardarCamion({ id: camion?.id ?? null, patente, chofer, capacidad: parseFloat(capacidad.replace(',', '.')), disponible });
+      const r = await guardarCamion({ id: camion?.id ?? null, patente, chofer, capacidad: parseFloat(capacidad.replace(',', '.')), disponible, soloMayorista });
       if (r.error) setError(r.error); else onCerrar();
     });
   }
@@ -402,11 +455,14 @@ function FormCamion({ camion, onCerrar }: { camion: CamionPlan | null; onCerrar:
       <div style={{ display: 'grid', gap: 10 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <label className="fld">Patente<input type="text" value={patente} onChange={(e) => setPatente(e.target.value)} autoComplete="off" /></label>
-          <label className="fld">Capacidad (m³ por viaje)<input type="text" inputMode="decimal" value={capacidad} onChange={(e) => setCapacidad(e.target.value)} /></label>
+          <label className="fld">Capacidad (m³ por viaje)<input type="text" inputMode="decimal" value={capacidad} onChange={(e) => cambiarCapacidad(e.target.value)} /></label>
         </div>
         <label className="fld">Chofer habitual (opcional)<input type="text" value={chofer} onChange={(e) => setChofer(e.target.value)} autoComplete="off" /></label>
         <label className="campo check row" style={{ gap: 8 }}>
           <input type="checkbox" checked={disponible} onChange={(e) => setDisponible_(e.target.checked)} style={{ minHeight: 'auto' }} /> Disponible (desmarcá si está en el taller o fuera de servicio)
+        </label>
+        <label className="campo check row" style={{ gap: 8 }}>
+          <input type="checkbox" checked={soloMayorista} onChange={(e) => { setSoloMayorista(e.target.checked); setMayTocado(true); }} style={{ minHeight: 'auto' }} /> Camión grande: solo viajes mayoristas (no se le asignan pedidos minoristas)
         </label>
         {error && <div className="banner err" style={{ margin: 0 }}>{error}</div>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>

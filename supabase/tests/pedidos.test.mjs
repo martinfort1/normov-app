@@ -1,11 +1,11 @@
-/* Migraciones 0008 y 0009: módulo Pedidos (permisos, avance por material, vínculo con viajes). */
+/* Migraciones 0008 y 0009: mÃ³dulo Pedidos (permisos, avance por material, vÃ­nculo con viajes). */
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { baseConStubs, aplicar, crearComo } from './helpers.mjs';
 
 let db, como, cliente, obra, arena, piedra, pedidoId;
 const ADMIN = '00000000-0000-0000-0000-0000000000c1';
-const HEREDA = '00000000-0000-0000-0000-0000000000c2';   // ya existía, con Viajes "Ver y cargar"
+const HEREDA = '00000000-0000-0000-0000-0000000000c2';   // ya existÃ­a, con Viajes "Ver y cargar"
 const SOLO_VER = '00000000-0000-0000-0000-0000000000c3'; // Pedidos solo ver
 const CARGA = '00000000-0000-0000-0000-0000000000c4';    // Pedidos ver y cargar, sin Viajes
 const CARGA_V = '00000000-0000-0000-0000-0000000000c5';  // Pedidos ver y cargar + Viajes solo ver
@@ -37,12 +37,12 @@ const items = () => JSON.stringify([{ material_id: arena, cantidad: 30 }, { mate
 const remito = async (n, material, cant) =>
   (await q(`insert into remitos (numero, fecha, cliente_id, obra_id, material_id, cantidad) values ($1, '2026-10-10', $2, $3, $4, $5) returning id`, [n, cliente, obra, material, cant])).rows[0].id;
 
-test('quien ya tenía Viajes hereda ese nivel en Pedidos', async () => {
+test('quien ya tenÃ­a Viajes hereda ese nivel en Pedidos', async () => {
   const r = await q("select nivel from permisos where user_id = $1 and modulo = 'pedidos'", [HEREDA]);
   assert.equal(r.rows[0].nivel, 'escritura');
 });
 
-test('guardar_pedido crea el pedido con sus materiales y número correlativo', async () => {
+test('guardar_pedido crea el pedido con sus materiales y nÃºmero correlativo', async () => {
   await como(CARGA, async () => {
     pedidoId = (await q("select guardar_pedido(null, $1, $2, 'urgente', '2026-10-20', $3::jsonb, 'Carga') as id", [cliente, obra, items()])).rows[0].id;
   });
@@ -82,7 +82,7 @@ test('permisos: solo ver no carga; cargar sin Viajes no vincula; sin Pedidos no 
     await assert.rejects(() => q('insert into pedido_remitos (remito_id, pedido_id) values ($1, $2)', [r, pedidoId]), (e) => e.code === '42501');
   });
   await como(HEREDA, async () => {
-    // HEREDA no tiene Pedidos como "pendiente de crear": lo heredó, así que puede ver; probamos con un usuario nuevo sin permisos
+    // HEREDA no tiene Pedidos como "pendiente de crear": lo heredÃ³, asÃ­ que puede ver; probamos con un usuario nuevo sin permisos
   });
   const SIN = '00000000-0000-0000-0000-0000000000c9';
   await q('insert into auth.users (id, email) values ($1, $2)', [SIN, 'sin@test.com']);
@@ -126,7 +126,7 @@ test('el estado "remitado" existe', async () => {
   assert.equal((await q('select estado from pedidos where id = $1', [pedidoId])).rows[0].estado, 'remitado');
 });
 
-test('planeación: camiones con capacidad, patente única, itinerario por día; solo quien carga Pedidos escribe', async () => {
+test('planeaciÃ³n: camiones con capacidad, patente Ãºnica, itinerario por dÃ­a; solo quien carga Pedidos escribe', async () => {
   await como(CARGA, async () => {
     const c = (await q("insert into camiones (patente, chofer, capacidad) values ('AB123CD', 'Juan', 12) returning id")).rows[0].id;
     await assert.rejects(() => q("insert into camiones (patente, capacidad) values (' ab123cd ', 6)"), (e) => e.code === '23505', 'patente repetida');
@@ -166,7 +166,7 @@ test('marcar un viaje del plan como hecho suma sus metros al pedido y lo mueve; 
   await como(CARGA, async () => { await q('select marcar_viaje_hecho($1, false)', [v1]); });
   assert.equal(Number((await estado()).entregado), 12);
 
-  // los remitos que lleguen después no duplican: lo entregado es el mayor entre lo anotado y lo remitado
+  // los remitos que lleguen despuÃ©s no duplican: lo entregado es el mayor entre lo anotado y lo remitado
   const r = await remito('7030', arena, 12);
   await como(CARGA_V, async () => { await q('insert into pedido_remitos (remito_id, pedido_id) values ($1, $2)', [r, nuevo]); });
   assert.equal(Number((await estado()).entregado), 12);
@@ -203,4 +203,22 @@ test('cargar un viaje desde el plan lo vincula al pedido y marca el viaje hecho,
   const r3 = await remito('7042', arena, 5);
   const plan2 = (await q("insert into plan_viajes (fecha, camion_id, orden, pedido_id, material_id, cantidad) values ('2026-11-21', $1, 2, $2, $3, 12) returning id", [cam, nuevo, arena])).rows[0].id;
   await como(SOLO_VER, async () => { await assert.rejects(() => q('select vincular_viaje_cargado($1, $2, $3)', [plan2, r3, 'x'])); });
+});
+
+test('segmentos y costos (0018): pedidos minoristas por defecto, mayoristas los de mÃ¡s de 12 mÂ³; camiÃ³n solo minorista; lista de costos sembrada', async () => {
+  const nuevo = (await q("select guardar_pedido(null, $1, null, 'normal', null, $2::jsonb, 'x') as id", [cliente, JSON.stringify([{ material_id: arena, cantidad: 30 }])])).rows[0].id;
+  assert.equal((await q('select segmento from pedidos where id = $1', [nuevo])).rows[0].segmento, 'minorista', 'por defecto minorista');
+  await como(CARGA, async () => { await q("update pedidos set segmento = 'mayorista' where id = $1", [nuevo]); });
+  assert.equal((await q('select segmento from pedidos where id = $1', [nuevo])).rows[0].segmento, 'mayorista');
+  await assert.rejects(() => q("update pedidos set segmento = 'otro' where id = $1", [nuevo]));
+  const cam = (await q("insert into camiones (patente, capacidad, solo_mayorista) values ('GDE111', 6, true) returning id")).rows[0].id;
+  assert.equal((await q('select solo_mayorista from camiones where id = $1', [cam])).rows[0].solo_mayorista, true);
+
+  assert.ok((await q('select count(*)::int n from lista_costos')).rows[0].n >= 30, 'costos de la hoja PRECIOS COSTO');
+  const moy = (await q("select costo_m3, desde::text d from lista_costos where cantera = 'MOYANO' and material = 'BASE' order by desde")).rows;
+  assert.deepEqual(moy.map((r) => Number(r.costo_m3)), [9000, 11000]);
+  await como(CARGA_V, async () => { assert.equal((await q('select count(*)::int n from lista_costos')).rows[0].n > 0, true); });   // con Viajes (solo ver) se leen
+  await como(SOLO_VER, async () => { assert.equal((await q('select count(*)::int n from lista_costos')).rows[0].n, 0); }); // sin Viajes no se ven
+  await como(CARGA_V, async () => { await assert.rejects(() => q("insert into lista_costos (cantera, material, desde, costo_m3) values ('X', 'Y', '2026-12-01', 1)")); }); // solo ver Viajes no escribe
+  await como(HEREDA, async () => { await q("insert into lista_costos (cantera, material, desde, costo_m3) values ('X', 'Y', '2026-12-01', 1)"); });
 });
