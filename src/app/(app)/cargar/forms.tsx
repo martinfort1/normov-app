@@ -158,8 +158,9 @@ function FormCarga({ carpeta, campos, inicial, mantener, opciones, alCambiar, re
 }
 
 // ───────────── viaje ─────────────
-export function FormViaje({ catalogo: cat, hoy, precarga }: { catalogo: CatalogoViaje; hoy: string; precarga?: { razon?: string; cliente?: string; material?: string; camion?: string; chofer?: string; cantidad?: string; fecha?: string; cantera?: string } }) {
+export function FormViaje({ catalogo: cat, hoy, precarga }: { catalogo: CatalogoViaje; hoy: string; precarga?: { razon?: string; cliente?: string; material?: string; camion?: string; chofer?: string; cantidad?: string; fecha?: string; cantera?: string; plan?: string } }) {
   const base: Valores = {
+    ...(precarga?.plan ? { plan: precarga.plan } : {}), // no es un campo: viaja con el formulario y el servidor lo vincula al pedido
     fecha: precarga?.fecha ?? hoy, remito: '', razon: precarga?.razon ?? '', cliente: precarga?.cliente ?? '', material: precarga?.material ?? '', cantidad: precarga?.cantidad ?? '',
     precio: '', cantera: precarga?.cantera ?? '', camion: precarga?.camion ?? '', chofer: precarga?.chofer ?? '', costoUnit: '', iva: '',
   };

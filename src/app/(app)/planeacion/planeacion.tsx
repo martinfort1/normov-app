@@ -13,6 +13,8 @@ export interface ViajePlan {
   numeroPedido: number; cliente: string; obra: string | null;
   /** Punto de retiro ("Desde"); el destino ("Hasta") es el cliente / obra */
   cantera: string;
+  /** Ya se cargó su remito desde "Cargar viaje" (queda vinculado al pedido) */
+  cargado: boolean;
 }
 export interface CamionPlan {
   id: string; patente: string; chofer: string; choferDia: string | null; capacidad: number; disponible: boolean; viajes: ViajePlan[];
@@ -170,9 +172,12 @@ export function Planeacion({ fecha, hoy, camiones, pedidos, canteras, puedeCarga
                           <Desde viaje={v} canteras={canteras} puedeCargar={puedeCargar} alError={(t) => setMsg({ tipo: 'bad', texto: t })} />
                           <div><span className="plan-lbl">Hasta</span><strong>{v.cliente}</strong>{v.obra && <span className="muted"> · {v.obra}</span>}</div>
                           <div style={{ fontSize: 13 }}><span className="mdot" style={{ background: colorMaterial(v.material) }} />{v.material} · <strong>{num2(v.cantidad)} {u(v.unidad)}</strong> <span className="muted">· pedido #{v.numeroPedido}</span></div>
-                          {v.hecho && puedeCargarViaje && (
-                            <Link className="btn sm" style={{ marginTop: 4 }} href={hrefCargarViaje(v, c, fecha)}>Cargar viaje</Link>
-                          )}
+                          {v.cargado
+                            ? <span className="pill good" style={{ marginTop: 4 }} title="El remito ya está cargado y vinculado al pedido">Remito cargado</span>
+                            : puedeCargarViaje && (
+                              <Link className="btn sm" style={{ marginTop: 4 }} href={hrefCargarViaje(v, c, fecha)}
+                                title="Al guardar el viaje queda vinculado al pedido y marcado como hecho">Cargar viaje</Link>
+                            )}
                         </div>
                         {puedeCargar && (
                           <div className="plan-acc">
@@ -236,7 +241,7 @@ export function Planeacion({ fecha, hoy, camiones, pedidos, canteras, puedeCarga
 
 /** Link a "Cargar viaje" con todo lo del itinerario ya completado (cliente, obra, material, camión, chofer, m³ y fecha). */
 function hrefCargarViaje(v: ViajePlan, c: CamionPlan, fecha: string) {
-  const q = new URLSearchParams({ tipo: 'viaje', razon: v.cliente, cliente: v.obra ?? '', material: v.material, camion: c.patente, chofer: choferDe(c), cantidad: String(v.cantidad), fecha, cantera: v.cantera });
+  const q = new URLSearchParams({ tipo: 'viaje', razon: v.cliente, cliente: v.obra ?? '', material: v.material, camion: c.patente, chofer: choferDe(c), cantidad: String(v.cantidad), fecha, cantera: v.cantera, plan: v.id });
   return `/cargar?${q.toString()}`;
 }
 

@@ -1,0 +1,34 @@
+/* Landing pública (/home). Usa los colores del sistema y no depende del menú lateral. */
+.lp { min-height: 100vh; background: var(--ground); color: var(--ink); font-family: Barlow, system-ui, sans-serif; }
+.lp a { color: inherit; }
+.lp-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px max(16px, calc((100% - 1040px) / 2)); border-bottom: 1px solid var(--line); background: var(--surface); position: sticky; top: 0; z-index: 5; }
+.lp-logo { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 24px; letter-spacing: .06em; }
+.lp-top nav { display: flex; align-items: center; gap: 18px; font-size: 15px; flex-wrap: wrap; justify-content: flex-end; }
+.lp-top nav a { text-decoration: none; }
+.lp-top nav a:hover { color: var(--bronze); }
+.lp-acceso { border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; }
+
+.lp-hero { padding: 72px max(16px, calc((100% - 1040px) / 2)) 64px; }
+.lp-eyebrow { text-transform: uppercase; letter-spacing: .14em; font-size: 13px; color: var(--bronze); margin: 0 0 10px; font-weight: 600; }
+.lp-hero h1 { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: clamp(36px, 7vw, 68px); line-height: 1.02; margin: 0 0 16px; max-width: 14ch; }
+.lp-lede { font-size: clamp(17px, 2.4vw, 21px); color: var(--ink-2); max-width: 46ch; margin: 0 0 26px; }
+.lp-cta { display: flex; gap: 10px; flex-wrap: wrap; }
+.lp-btn { display: inline-flex; align-items: center; min-height: 44px; padding: 0 20px; border-radius: 8px; background: var(--ink); color: var(--ground) !important; text-decoration: none; font-weight: 600; }
+.lp-btn:hover { background: var(--bronze); }
+.lp-btn.ghost { background: transparent; color: var(--ink) !important; border: 1px solid var(--line); }
+.lp-btn.ghost:hover { border-color: var(--bronze); background: transparent; }
+
+.lp-sec { padding: 56px max(16px, calc((100% - 1040px) / 2)); }
+.lp-sec.alt { background: var(--surface); border-block: 1px solid var(--line); }
+.lp-sec h2 { font-family: 'Barlow Condensed', sans-serif; font-size: clamp(26px, 4vw, 36px); margin: 0 0 24px; }
+.lp-sec h3 { margin: 0 0 6px; font-size: 18px; }
+.lp-sec p { margin: 0; color: var(--ink-2); }
+
+.lp-pasos { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 24px; }
+.lp-n { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--bronze); color: #fff; font-weight: 700; margin-bottom: 10px; }
+.lp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.lp-card { background: var(--ground); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+
+.lp-contacto { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 18px; }
+.lp-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 22px max(16px, calc((100% - 1040px) / 2)); border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+html { scroll-behavior: smooth; }

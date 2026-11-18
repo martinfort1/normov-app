@@ -18,16 +18,17 @@ const TIPOS: { id: Id; label: string; titulo: string; modulo: Modulo; excel: Tip
   { id: 'cheque', label: 'Cheque', titulo: 'Cheque nuevo', modulo: 'cheques', excel: { id: 'cheques', titulo: 'Cheques', hoja: 'Cheques', rango: true } },
 ];
 
-export default async function Cargar({ searchParams }: { searchParams: Promise<{ tipo?: string; razon?: string; cliente?: string; material?: string; camion?: string; chofer?: string; cantidad?: string; fecha?: string; cantera?: string }> }) {
+export default async function Cargar({ searchParams }: { searchParams: Promise<{ tipo?: string; razon?: string; cliente?: string; material?: string; camion?: string; chofer?: string; cantidad?: string; fecha?: string; cantera?: string; plan?: string }> }) {
   const acceso = await getAcceso();
   const permitidos = acceso ? TIPOS.filter((t) => acceso.puedeEscribir(t.modulo)) : [];
   if (!acceso || !permitidos.length) return <SinAcceso seccion="Cargar datos" />;
 
-  const { tipo: pedido, razon, cliente, material, camion, chofer, cantidad, fecha, cantera } = await searchParams;
+  const { tipo: pedido, razon, cliente, material, camion, chofer, cantidad, fecha, cantera, plan } = await searchParams;
   // Desde Pedidos y Planeación llegan cliente, obra, material (y camión, chofer, m³ y fecha) para dejar el viaje listo
   const corto = (s?: string) => s?.slice(0, 200);
   const precarga = razon || cliente || material || camion
     ? {
+      plan: plan && /^[0-9a-f-]{36}$/i.test(plan) ? plan : undefined, // viaje del plan que se está cargando: el servidor lo vincula al pedido
       razon: corto(razon), cliente: corto(cliente), material: corto(material), camion: corto(camion), chofer: corto(chofer), cantera: corto(cantera),
       cantidad: cantidad && Number(cantidad) > 0 ? String(Number(cantidad)) : undefined, fecha: fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha) ? fecha : undefined,
     }
@@ -48,7 +49,7 @@ export default async function Cargar({ searchParams }: { searchParams: Promise<{
     );
   } else {
     const [formulario, items] = await Promise.all([
-      actual.id === 'viaje' ? catalogoViaje(db).then((c) => <FormViaje key={`${razon}|${cliente}|${material}|${camion}|${cantidad}|${fecha}|${cantera}`} catalogo={c} hoy={hoy} precarga={precarga} />)
+      actual.id === 'viaje' ? catalogoViaje(db).then((c) => <FormViaje key={`${razon}|${cliente}|${material}|${camion}|${cantidad}|${fecha}|${cantera}|${plan}`} catalogo={c} hoy={hoy} precarga={precarga} />)
         : actual.id === 'combustible' ? catalogoCombustible(db).then((c) => <FormCombustible catalogo={c} hoy={hoy} />)
         : actual.id === 'proveedor' ? catalogoProveedor(db).then((c) => <FormProveedor catalogo={c} hoy={hoy} />)
         : catalogoCheque(db).then((c) => <FormCheque catalogo={c} hoy={hoy} />),

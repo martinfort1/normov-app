@@ -13,7 +13,8 @@ const ESTADOS: { key: Estado; label: string }[] = [
   { key: 'admin', label: 'Administrador (todo, y aprueba certificados)' },
 ];
 
-const todos = (n: Nivel) => Object.fromEntries(MODULOS.map((m) => [m.key, n])) as Record<Modulo, Nivel>;
+/** La caja diaria nunca entra en un atajo: se concede a mano. */
+const todos = (n: Nivel) => Object.fromEntries(MODULOS.map((m) => [m.key, m.key === 'caja' ? 'ninguno' : n])) as Record<Modulo, Nivel>;
 
 function Aviso({ msg }: { msg: { tipo: 'good' | 'bad'; texto: string } | null }) {
   return msg ? <span className={`pill ${msg.tipo}`}>{msg.texto}</span> : null;

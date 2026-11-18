@@ -10,6 +10,7 @@ export const MODULOS = [
   { key: 'clientes', label: 'Saldos de clientes', ruta: '/clientes' },
   { key: 'proveedores', label: 'Saldos de proveedores', ruta: '/proveedores' },
   { key: 'cheques', label: 'Cheques', ruta: '/cheques' },
+  { key: 'caja', label: 'Caja diaria', ruta: '/caja' },
   { key: 'sistema', label: 'Estado del sistema', ruta: '/sistema' },
 ] as const;
 

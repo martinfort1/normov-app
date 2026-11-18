@@ -44,6 +44,23 @@ export default async function Pedidos() {
     const viejo = await supabase.from('v_pedido_avance').select('item_id,pedido_id,material_id,pedido,entregado').in('pedido_id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000']);
     return { data: (viejo.data ?? null) as unknown as FilaAvance[] | null, listo: false };
   };
+  // Lo que está planificado desde hoy y todavía no se hizo (si Planeación no está lista, simplemente no se muestra)
+  const hoy = hoyAR();
+  const planRes = ids.length
+    ? await supabase.from('plan_viajes').select('pedido_id,fecha,cantidad,camiones(patente)').in('pedido_id', ids).gte('fecha', hoy).eq('hecho', false).order('fecha')
+    : { data: [], error: null };
+  const planDe = new Map<string, NonNullable<PedidoCard['plan']>>();
+  if (!planRes.error) {
+    for (const r of (planRes.data ?? []) as unknown as { pedido_id: string; fecha: string; cantidad: number; camiones: { patente: string } | { patente: string }[] | null }[]) {
+      const prev = planDe.get(r.pedido_id);
+      if (prev && prev.fecha !== r.fecha) continue; // solo el próximo día con viajes
+      const cam = Array.isArray(r.camiones) ? r.camiones[0]?.patente : r.camiones?.patente;
+      const p = prev ?? { fecha: r.fecha, m3: 0, viajes: 0, camiones: [] as string[] };
+      p.m3 += Number(r.cantidad); p.viajes += 1;
+      if (cam && !p.camiones.includes(cam)) p.camiones.push(cam);
+      planDe.set(r.pedido_id, p);
+    }
+  }
   const [avanceRes, vinculosRes, clientesRes, obrasRes, materialesRes] = await Promise.all([
     pedirAvance(),
     ids.length ? supabase.from('pedido_remitos').select('pedido_id').in('pedido_id', ids) : Promise.resolve({ data: [], error: null }),
@@ -74,6 +91,7 @@ export default async function Pedidos() {
       id: f.id, numero: f.numero, clienteId: f.cliente_id, cliente: f.clientes?.razon_social ?? '—', obraId: f.obra_id, obra: f.obras?.nombre ?? null,
       prioridad: f.prioridad, fechaEntrega: f.fecha_entrega, estado: f.estado, items, viajes: viajes.get(f.id) ?? 0,
       pct: total > 0 ? Math.round((hecho / total) * 100) : 0,
+      plan: planDe.get(f.id) ?? null,
     };
   }).sort((a, b) => RANGO[a.prioridad] - RANGO[b.prioridad] || (a.fechaEntrega ?? '9999').localeCompare(b.fechaEntrega ?? '9999') || a.numero - b.numero);
 
@@ -87,7 +105,7 @@ export default async function Pedidos() {
     <>
       <h1>Pedidos</h1>
       <p className="lede">Lo que hay que entregar. Vinculá los viajes ya cargados para ver cuánto se entregó y cuánto falta.</p>
-      <Tablero pedidos={pedidos} cat={cat} hoy={hoyAR()} puedeCargar={acceso.puedeEscribir('pedidos')} puedeVincular={acceso.puedeEscribir('pedidos') && acceso.puedeVer('viajes')} puedeCargarViaje={acceso.puedeEscribir('viajes')} entregadoListo={avanceRes.listo} />
+      <Tablero pedidos={pedidos} cat={cat} hoy={hoy} planListo={!planRes.error} puedeCargar={acceso.puedeEscribir('pedidos')} puedeVincular={acceso.puedeEscribir('pedidos') && acceso.puedeVer('viajes')} puedeCargarViaje={acceso.puedeEscribir('viajes')} entregadoListo={avanceRes.listo} />
     </>
   );
 }

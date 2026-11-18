@@ -15,6 +15,8 @@ export interface PedidoCard {
   /** entregado = lo mayor entre lo anotado a mano y lo que suman los viajes vinculados (conRemito) */
   items: { itemId: string; materialId: string; material: string; unidad: string; pedido: number; entregado: number; conRemito: number }[];
   viajes: number; pct: number;
+  /** Próximo día con viajes planificados todavía sin hacer (Planeación), o null si no hay */
+  plan: { fecha: string; m3: number; viajes: number; camiones: string[] } | null;
 }
 export interface Catalogos {
   clientes: { id: string; nombre: string }[];
@@ -53,7 +55,7 @@ const faltan = (p: PedidoCard) => p.items.reduce((s, i) => s + Math.max(0, i.ped
 
 const unidadTxt = (u: string) => (u === 'm3' ? 'm³' : u);
 
-export function Tablero({ pedidos, cat, hoy, puedeCargar, puedeVincular, puedeCargarViaje, entregadoListo }: { pedidos: PedidoCard[]; cat: Catalogos; hoy: string; puedeCargar: boolean; puedeVincular: boolean; puedeCargarViaje: boolean; entregadoListo: boolean }) {
+export function Tablero({ pedidos, cat, hoy, planListo, puedeCargar, puedeVincular, puedeCargarViaje, entregadoListo }: { pedidos: PedidoCard[]; cat: Catalogos; hoy: string; planListo: boolean; puedeCargar: boolean; puedeVincular: boolean; puedeCargarViaje: boolean; entregadoListo: boolean }) {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   const [editando, setEditando] = useState<PedidoCard | 'nuevo' | null>(null);
@@ -93,7 +95,7 @@ export function Tablero({ pedidos, cat, hoy, puedeCargar, puedeVincular, puedeCa
   }
 
   const tarjeta = (p: PedidoCard) => (
-    <Tarjeta key={p.id} p={p} hoy={hoy} puedeCargar={puedeCargar} puedeVincular={puedeVincular} puedeCargarViaje={puedeCargarViaje} entregadoListo={entregadoListo} alError={setMsg} pending={pending} ocupado={moviendo === p.id}
+    <Tarjeta key={p.id} p={p} hoy={hoy} planListo={planListo} puedeCargar={puedeCargar} puedeVincular={puedeVincular} puedeCargarViaje={puedeCargarViaje} entregadoListo={entregadoListo} alError={setMsg} pending={pending} ocupado={moviendo === p.id}
       onDragStart={() => setArrastrando(p.id)} onDragEnd={() => { setArrastrando(null); setSobre(null); }}
       onEditar={() => setEditando(p)} onVincular={() => setVinculando(p)} onCompletar={() => completar(p)} onCancelar={() => cancelar(p)}
       onMover={(e) => correr(p.id, () => moverPedido(p.id, e))} />
@@ -140,8 +142,8 @@ export function Tablero({ pedidos, cat, hoy, puedeCargar, puedeVincular, puedeCa
 }
 
 // ───────────── tarjeta ─────────────
-function Tarjeta({ p, hoy, puedeCargar, puedeVincular, puedeCargarViaje, entregadoListo, alError, pending, ocupado, onDragStart, onDragEnd, onEditar, onVincular, onCompletar, onCancelar, onMover }: {
-  p: PedidoCard; hoy: string; puedeCargar: boolean; puedeVincular: boolean; puedeCargarViaje: boolean; entregadoListo: boolean; alError: (mensaje: string) => void; pending: boolean; ocupado: boolean;
+function Tarjeta({ p, hoy, planListo, puedeCargar, puedeVincular, puedeCargarViaje, entregadoListo, alError, pending, ocupado, onDragStart, onDragEnd, onEditar, onVincular, onCompletar, onCancelar, onMover }: {
+  p: PedidoCard; hoy: string; planListo: boolean; puedeCargar: boolean; puedeVincular: boolean; puedeCargarViaje: boolean; entregadoListo: boolean; alError: (mensaje: string) => void; pending: boolean; ocupado: boolean;
   onDragStart: () => void; onDragEnd: () => void; onEditar: () => void; onVincular: () => void; onCompletar: () => void; onCancelar: () => void;
   onMover: (e: Columna) => void;
 }) {
@@ -165,6 +167,16 @@ function Tarjeta({ p, hoy, puedeCargar, puedeVincular, puedeCargarViaje, entrega
         <span className={`pill ${pl.clase}`} style={{ marginLeft: 'auto' }}>{pl.texto}</span>
       </div>
       <div className="kcard-cli">{p.cliente}</div>
+      {p.estado !== 'remitado' && (p.plan
+        ? (
+          <div>
+            <Link href={`/planeacion?fecha=${p.plan.fecha}`} className={`pill ${p.plan.fecha === hoy ? 'good' : 'info'}`} style={{ textDecoration: 'none' }}
+              title={`Camiones: ${p.plan.camiones.join(', ') || '—'}. Ver en Planeación`}>
+              {p.plan.fecha === hoy ? 'Sale hoy' : `Planificado ${fmtFecha(p.plan.fecha)}`} · {num2(p.plan.m3)} m³ · {p.plan.viajes} {p.plan.viajes === 1 ? 'viaje' : 'viajes'}
+            </Link>
+          </div>
+        )
+        : planListo && faltan(p) > 0.001 && <div><Link href="/planeacion" className="pill" style={{ textDecoration: 'none' }} title="Todavía no tiene viajes en el plan. Ir a Planeación">Sin planificar</Link></div>)}
       {sinRemito > 0.001 && <div><span className="pill warn" title="Hay metros anotados como entregados que todavía no tienen sus viajes cargados">Falta remito · {num2(sinRemito)}</span></div>}
       {p.obra && <div className="muted" style={{ fontSize: 13 }}>{p.obra}</div>}
       <table className="kitems">

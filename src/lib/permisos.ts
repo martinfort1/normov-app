@@ -70,7 +70,7 @@ export function rutasVisibles(a: Acceso): string[] {
   if ((['viajes', 'combustible', 'proveedores', 'cheques'] as const).some((m) => a.puedeEscribir(m))) rutas.push('/cargar');
   // Planeación usa el permiso de Pedidos
   if (a.puedeVer('pedidos')) rutas.push('/planeacion');
-  if (a.esAdmin) rutas.push('/caja', '/cashflow', '/usuarios');
+  if (a.esAdmin) rutas.push('/cashflow', '/usuarios');
   return rutas;
 }
 

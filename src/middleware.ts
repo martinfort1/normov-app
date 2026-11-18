@@ -17,11 +17,13 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
   // /api/sync no usa sesión de usuario: lo llama Apps Script y se autoriza con SYNC_SECRET, dentro del propio endpoint.
-  const publica = request.nextUrl.pathname === '/login' || request.nextUrl.pathname.startsWith('/auth/') || request.nextUrl.pathname.startsWith('/api/sync');
+  const ruta = request.nextUrl.pathname;
+  const publica = ruta === '/login' || ruta === '/home' || ruta.startsWith('/auth/') || ruta.startsWith('/api/sync');
 
+  // Quien no inició sesión ve la página pública; el sistema se abre desde "Acceso del personal" (/login)
   if (!user && !publica) {
     const url = request.nextUrl.clone();
-    url.pathname = '/login';
+    url.pathname = '/home';
     url.search = '';
     return NextResponse.redirect(url);
   }

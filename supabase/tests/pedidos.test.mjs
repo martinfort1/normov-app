@@ -177,3 +177,30 @@ test('marcar un viaje del plan como hecho suma sus metros al pedido y lo mueve; 
 test('un pedido sin materiales se rechaza', async () => {
   await assert.rejects(() => q("select guardar_pedido(null, $1, null, 'normal', null, '[]'::jsonb, 'x')", [cliente]));
 });
+
+test('cargar un viaje desde el plan lo vincula al pedido y marca el viaje hecho, una sola vez (0017)', async () => {
+  const nuevo = (await q("select guardar_pedido(null, $1, null, 'normal', null, $2::jsonb, 'x') as id", [cliente, JSON.stringify([{ material_id: arena, cantidad: 24 }])])).rows[0].id;
+  const cam = (await q("insert into camiones (patente, capacidad) values ('PL222PL', 12) returning id")).rows[0].id;
+  const plan = (await q("insert into plan_viajes (fecha, camion_id, orden, pedido_id, material_id, cantidad) values ('2026-11-21', $1, 1, $2, $3, 12) returning id", [cam, nuevo, arena])).rows[0].id;
+  const r = await remito('7040', arena, 11);
+  const estado = async () => (await q('select a.entregado, a.con_remito from v_pedido_avance a where a.pedido_id = $1', [nuevo])).rows[0];
+
+  await como(CARGA_V, async () => { assert.equal((await q('select vincular_viaje_cargado($1, $2, $3) as ok', [plan, r, 'x'])).rows[0].ok, true); });
+  const p = (await q('select hecho, remito_id from plan_viajes where id = $1', [plan])).rows[0];
+  assert.equal(p.hecho, true);
+  assert.equal(p.remito_id, r);
+  let e = await estado();
+  assert.equal(Number(e.entregado), 12, 'lo entregado es el mayor entre lo planificado hecho (12) y lo remitado (11)');
+  assert.equal(Number(e.con_remito), 11);
+
+  // repetir no vincula ni suma otra vez
+  const r2 = await remito('7041', arena, 11);
+  await como(CARGA_V, async () => { assert.equal((await q('select vincular_viaje_cargado($1, $2, $3) as ok', [plan, r2, 'x'])).rows[0].ok, false); });
+  assert.equal((await q('select count(*)::int n from pedido_remitos where pedido_id = $1', [nuevo])).rows[0].n, 1);
+  assert.equal(Number((await estado()).entregado), 12);
+
+  // sin permiso de cargar en Pedidos no se puede
+  const r3 = await remito('7042', arena, 5);
+  const plan2 = (await q("insert into plan_viajes (fecha, camion_id, orden, pedido_id, material_id, cantidad) values ('2026-11-21', $1, 2, $2, $3, 12) returning id", [cam, nuevo, arena])).rows[0].id;
+  await como(SOLO_VER, async () => { await assert.rejects(() => q('select vincular_viaje_cargado($1, $2, $3)', [plan2, r3, 'x'])); });
+});

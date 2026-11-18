@@ -76,22 +76,36 @@ export async function guardarViaje(e: EntradaCarga): Promise<Resultado> {
       numeroFinal = siguienteLibreSR(base12, (data ?? []).map((r) => r.numero as string));
     }
   }
+  let remitoId: string | null = null;
   try {
     const maestros = await resolverMaestros(supabase, [{ razon, cliente, material, unidad }]);
-    const { error } = await supabase.from('remitos').insert({
+    const { data: creado, error } = await supabase.from('remitos').insert({
       ...(idViaje ? { id_viaje: idViaje } : {}),
       numero: numeroFinal, fecha, ...idsMaestros(maestros, { razon, cliente, material }), camion, chofer, cantera,
       cantidad, precio, total, neto, costo, origen: 'manual', foto_path: e.fotoPath, creado_por: p.a.userId, autor: p.a.nombre,
-    });
+    }).select('id').single();
     if (error) {
       if (error.code === '23505') return err(`Ya hay un viaje con el remito ${numeroFinal} en esa fecha. Para cargar dos viajes con el mismo remito y fecha hay que correr antes la migración 0007_id_viaje.sql en Supabase.`);
       return err(msgDb(error.message));
     }
+    remitoId = (creado?.id as string | undefined) ?? null;
   } catch (x) {
     return err(msgDb(x instanceof Error ? x.message : 'No se pudo guardar.'));
   }
+
+  // Viaje que viene del itinerario de Planeación: queda vinculado a su pedido y marcado como hecho. Si no se puede, el viaje igual queda cargado.
+  let aviso = '';
+  const plan = v.plan;
+  if (plan && remitoId && /^[0-9a-f-]{36}$/i.test(plan)) {
+    if (!p.a.puedeEscribir('pedidos')) aviso = ' No se vinculó al pedido: no tenés permiso para cargar en Pedidos.';
+    else {
+      const r = await supabase.rpc('vincular_viaje_cargado', { p_plan: plan, p_remito: remitoId, p_autor: p.a.nombre || p.a.email });
+      if (r.error) aviso = /vincular_viaje_cargado|schema cache/.test(r.error.message) ? ' No se vinculó al pedido: falta correr la migración 0017_plan_remito.sql en Supabase.' : ` No se pudo vincular al pedido (${r.error.message}).`;
+      else if (r.data === true) { aviso = ' Quedó vinculado a su pedido y marcado como hecho en Planeación.'; revalidatePath('/planeacion'); revalidatePath('/pedidos'); }
+    }
+  }
   refrescar();
-  return { error: null, mensaje: `Viaje cargado${idViaje ? ` · ID ${idViaje}` : ''}${numeroFinal.startsWith('SR-') ? ' · sin número de remito' : ` · remito ${numeroFinal}`}.` };
+  return { error: null, mensaje: `Viaje cargado${idViaje ? ` · ID ${idViaje}` : ''}${numeroFinal.startsWith('SR-') ? ' · sin número de remito' : ` · remito ${numeroFinal}`}.${aviso}` };
 }
 
 // ───────────── combustible ─────────────

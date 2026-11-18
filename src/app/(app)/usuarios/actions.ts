@@ -31,13 +31,15 @@ function filasPermisos(userId: string, niveles: Partial<Record<Modulo, Nivel>>) 
 async function guardarPermisos(supabase: Awaited<ReturnType<typeof createClient>> | ReturnType<typeof crearClienteAdmin>, filas: ReturnType<typeof filasPermisos>) {
   const r = await supabase.from('permisos').upsert(filas, { onConflict: 'user_id,modulo' });
   if (r.error && /modulo_app/.test(r.error.message)) {
-    return supabase.from('permisos').upsert(filas.filter((f) => f.modulo !== 'pedidos'), { onConflict: 'user_id,modulo' });
+    // tampoco se conoce "caja" (migración 0015) si falta
+    return supabase.from('permisos').upsert(filas.filter((f) => f.modulo !== 'pedidos' && f.modulo !== 'caja'), { onConflict: 'user_id,modulo' });
   }
   return r;
 }
 function nivelesDePreset(p: Preset): Record<Modulo, Nivel> {
   const n: Nivel = p === 'completo' ? 'escritura' : p === 'lectura' ? 'lectura' : 'ninguno';
-  return Object.fromEntries(MODULOS.map((m) => [m.key, n])) as Record<Modulo, Nivel>;
+  // la caja nunca se da por preset: se concede a mano
+  return Object.fromEntries(MODULOS.map((m) => [m.key, m.key === 'caja' ? 'ninguno' : n])) as Record<Modulo, Nivel>;
 }
 
 export async function guardarUsuario(input: { id: string; nombre: string; estado: Estado; niveles: Record<Modulo, Nivel> }): Promise<Resultado> {

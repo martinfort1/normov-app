@@ -35,6 +35,9 @@ export default async function PaginaPlaneacion({ searchParams }: { searchParams:
 
   // El punto de retiro (cantera) necesita la migración 0013; sin ella se sigue funcionando sin esa columna
   const pedirViajes = async () => {
+    // remito_id (migración 0017) dice si el viaje ya tiene su remito cargado
+    const todo = await supabase.from('plan_viajes').select('id,camion_id,orden,pedido_id,material_id,cantidad,hecho,cantera,remito_id').eq('fecha', fecha).order('orden');
+    if (!todo.error) return todo;
     const con = await supabase.from('plan_viajes').select('id,camion_id,orden,pedido_id,material_id,cantidad,hecho,cantera').eq('fecha', fecha).order('orden');
     if (!con.error) return con;
     return supabase.from('plan_viajes').select('id,camion_id,orden,pedido_id,material_id,cantidad,hecho').eq('fecha', fecha).order('orden');
@@ -47,7 +50,7 @@ export default async function PaginaPlaneacion({ searchParams }: { searchParams:
     // Canteras conocidas: las de los viajes de los últimos ~18 meses, de más a menos usadas
     supabase.from('remitos').select('cantera').gte('fecha', addDays(hoy, -548)).not('cantera', 'is', null).order('fecha', { ascending: false }).limit(5000),
   ]);
-  const viajes = (viajesRes.data ?? []) as unknown as { id: string; camion_id: string; orden: number; pedido_id: string; material_id: string; cantidad: number; hecho: boolean; cantera?: string | null }[];
+  const viajes = (viajesRes.data ?? []) as unknown as { id: string; camion_id: string; orden: number; pedido_id: string; material_id: string; cantidad: number; hecho: boolean; cantera?: string | null; remito_id?: string | null }[];
   const uso = new Map<string, number>();
   for (const r of (canterasRes.data ?? []) as { cantera: string | null }[]) {
     const c = (r.cantera ?? '').trim().toUpperCase();
@@ -94,7 +97,7 @@ export default async function PaginaPlaneacion({ searchParams }: { searchParams:
       const ped = info.get(v.pedido_id);
       return {
         id: v.id, orden: v.orden, pedidoId: v.pedido_id, materialId: v.material_id, material: materiales.get(v.material_id)?.nombre ?? '—',
-        unidad: materiales.get(v.material_id)?.unidad ?? 'm3', cantidad: Number(v.cantidad), hecho: v.hecho, cantera: v.cantera ?? '',
+        unidad: materiales.get(v.material_id)?.unidad ?? 'm3', cantidad: Number(v.cantidad), hecho: v.hecho, cantera: v.cantera ?? '', cargado: !!v.remito_id,
         numeroPedido: ped?.numero ?? 0, cliente: ped?.cliente ?? '—', obra: ped?.obra ?? null,
       };
     }),
