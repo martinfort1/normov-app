@@ -72,6 +72,8 @@ export function rutasVisibles(a: Acceso): string[] {
   if (a.puedeVer('pedidos')) rutas.push('/planeacion');
   // Precios (venta y costo) usa el permiso de Viajes: es lo que alimenta el precio y el costo al cargar un viaje
   if (a.puedeVer('viajes')) rutas.push('/precios');
+  // Rentabilidad muestra márgenes y costos: administradores y quien tenga Caja diaria
+  if (a.esAdmin || a.puedeVer('caja')) rutas.push('/rentabilidad');
   if (a.esAdmin) rutas.push('/cashflow', '/usuarios');
   return rutas;
 }

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getAcceso, type Acceso } from '@/lib/permisos';
 import { resolverMaestros, idsMaestros } from '@/lib/sheets/importar';
 import { sha, partesMov, partesCheque, partesCarga, partesSinRemito, siguienteLibre, siguienteLibreSR } from '@/lib/sheets/claves';
+import { encolar } from '@/lib/sheets/cola';
 import { clean, up, remitoKey, unitOf, isTruck } from '@/lib/sheets/parsers';
 
 export type Valores = Record<string, string>;
@@ -104,6 +105,11 @@ export async function guardarViaje(e: EntradaCarga): Promise<Resultado> {
       else if (r.data === true) { aviso = ' Quedó vinculado a su pedido y marcado como hecho en Planeación.'; revalidatePath('/planeacion'); revalidatePath('/pedidos'); }
     }
   }
+  const avisoPlanilla = await encolar(supabase, 'viaje', {
+    fecha, cliente, razon, remito: numeroFinal.startsWith('SR-') ? '' : numeroFinal, camion, chofer, cantera, material, cantidad, precio, neto, total,
+    costoUnit: costoUnit > 0 ? costoUnit : '', idViaje, autor: p.a.nombre,
+  });
+  if (avisoPlanilla) aviso += ` ${avisoPlanilla}`;
   refrescar();
   return { error: null, mensaje: `Viaje cargado${idViaje ? ` · ID ${idViaje}` : ''}${numeroFinal.startsWith('SR-') ? ' · sin número de remito' : ` · remito ${numeroFinal}`}.${aviso}` };
 }
@@ -129,8 +135,11 @@ export async function guardarCombustible(e: EntradaCarga): Promise<Resultado> {
     foto_path: e.fotoPath, origen: 'app', creado_por: p.a.userId, autor: p.a.nombre,
   });
   if (error) return err(msgDb(error.message));
+  const avisoPlanilla = await encolar(supabase, 'combustible', {
+    fecha, remito, patente, litros, tipo: tipo === '—' ? '' : tipo, estacion: estacion === '—' ? '' : estacion, chofer: chofer === '—' ? '' : chofer, precioLitro: precioLitro ?? '', autor: p.a.nombre,
+  });
   refrescar();
-  return { error: null, mensaje: `Carga cargada: ${patente}, ${litros} litros.` };
+  return { error: null, mensaje: `Carga cargada: ${patente}, ${litros} litros.${avisoPlanilla ? ` ${avisoPlanilla}` : ''}` };
 }
 
 // ───────────── proveedor ─────────────
@@ -161,8 +170,12 @@ export async function guardarProveedor(e: EntradaCarga): Promise<Resultado> {
     foto_path: e.fotoPath, origen: 'app', creado_por: p.a.userId, autor: p.a.nombre,
   });
   if (error) return err(msgDb(error.message));
+  const avisoPlanilla = await encolar(supabase, 'proveedor', {
+    fecha, proveedor, unidad: clean(v.unidad), centro: clean(v.centro), rubro: clean(v.rubro), subrubro: clean(v.subrubro), detalle, factura,
+    debe: debe || '', haber: haber || '', forma, cheque, obs: clean(v.obs), autor: p.a.nombre, fechaCobro: fechaPago ?? '',
+  });
   refrescar();
-  return { error: null, mensaje: `Movimiento cargado: ${proveedor}.` };
+  return { error: null, mensaje: `Movimiento cargado: ${proveedor}.${avisoPlanilla ? ` ${avisoPlanilla}` : ''}` };
 }
 
 // ───────────── cheque ─────────────
@@ -191,8 +204,12 @@ export async function guardarCheque(e: EntradaCarga): Promise<Resultado> {
     foto_path: e.fotoPath, origen: 'app', creado_por: p.a.userId, autor: p.a.nombre,
   });
   if (error) return err(msgDb(error.message));
+  const avisoPlanilla = await encolar(supabase, 'cheque', {
+    fecha: emision, tipoCheque: tipo, contraparte, nro: numeroChq, banco, librador: clean(v.librador), cuit: clean(v.cuit), monto, vto,
+    estadoCheque: estado, endosado: clean(v.endosado), obs: clean(v.obs), autor: p.a.nombre,
+  });
   refrescar();
-  return { error: null, mensaje: `Cheque N° ${numeroChq} cargado.` };
+  return { error: null, mensaje: `Cheque N° ${numeroChq} cargado.${avisoPlanilla ? ` ${avisoPlanilla}` : ''}` };
 }
 
 // ───────────── anular y ver adjuntos ─────────────

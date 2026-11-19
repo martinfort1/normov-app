@@ -80,6 +80,7 @@ export function ShellClient({ pendientesCert, pendientesPedidos = 0, visibles, c
     { titulo: 'Finanzas', items: [
       { href: '/caja', label: 'Caja diaria', icon: 'caja' },
       { href: '/cheques', label: 'Cheques', icon: 'chq' },
+      { href: '/rentabilidad', label: 'Rentabilidad', icon: 'cf' },
       { href: '/cashflow', label: 'Cash flow', icon: 'cf' },
     ] },
     { titulo: 'Cargar', items: [

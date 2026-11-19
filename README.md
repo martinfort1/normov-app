@@ -17,6 +17,8 @@ Chofer → WhatsApp → Admin carga en Sheets → Apps Script (automático) → 
 | Migraciones 0002 (certificados atómicos), 0003 (clave de remito por fecha) | corridas en producción |
 | Migración 0004 (`sync_log`, pantalla Sistema) | **falta correr** si la pantalla Sistema avisa que falta la tabla; va ANTES que la 0005 |
 | Migración 0005 (permisos por usuario y por sección, pantalla Usuarios) | corrida |
+| Migración 0019 (`sheet_cola`: cola app → planillas) + `apps-script/app-a-planilla.gs.js` | **nueva — falta correr**. Lo que se carga en Cargar datos (viaje, combustible, proveedor, cheque) se escribe también en la planilla. Instalar el archivo en el proyecto de Apps Script de la Planilla NORMOV 2026 (el que tiene el script del tablero) y crear un activador de `llevarCargasDeLaApp` cada 5 min. Las anulaciones y correcciones hechas en la app todavía NO se pasan a la planilla |
+| Sync planilla → app comprimido (gzip) | `_comun.gs.js` nuevo: recorta filas/columnas vacías y manda comprimido; hay que **reemplazar `comun` en los tres proyectos de Apps Script** |
 | Migración 0018 (Planeación Minorista / Mayorista, camiones "solo minorista" y lista de costos por cantera, de la hoja PRECIOS COSTO) | **nueva — falta correr**, después de la 0012 y la 0010 |
 | Migración 0017 (Planeación: "Cargar viaje" desde el itinerario vincula solo el remito al pedido y marca el viaje hecho) | **nueva — falta correr**, después de la 0014 |
 | Migraciones 0015 y 0016 (Cobranzas de clientes imputadas a certificados aprobados + Caja diaria con permiso propio "Caja") | **nuevas — falta correr**, en orden: primero la 0015 y después la 0016 |

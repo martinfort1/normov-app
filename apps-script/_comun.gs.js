@@ -13,7 +13,7 @@
 function leerHoja_(nombre) {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(nombre);
   if (!sh) return null;
-  const rango = sh.getDataRange().getValues();
+  const rango = recortar_(sh.getDataRange().getValues());
   // Las fechas llegan como Date de Apps Script: se convierten a "AAAA-MM-DD" para que no haya
   // ambigüedad de huso horario al viajar como JSON. Todo lo demás (texto, número) queda igual.
   const tz = Session.getScriptTimeZone() || 'America/Argentina/Tucuman';
@@ -22,6 +22,20 @@ function leerHoja_(nombre) {
       return celda instanceof Date ? Utilities.formatDate(celda, tz, 'yyyy-MM-dd') : celda;
     });
   });
+}
+
+/** Saca las filas y columnas vacías del final (una hoja de 9.700 filas con 6.700 usadas mandaba 3.000 filas de nada). */
+function recortar_(filas) {
+  const vacia = function (c) { return c === '' || c === null || c === undefined; };
+  let ultFila = filas.length;
+  while (ultFila > 0 && filas[ultFila - 1].every(vacia)) ultFila--;
+  let ultCol = 0;
+  for (let i = 0; i < ultFila; i++) {
+    for (let j = filas[i].length - 1; j >= ultCol; j--) {
+      if (!vacia(filas[i][j])) { ultCol = j + 1; break; }
+    }
+  }
+  return filas.slice(0, ultFila).map(function (f) { return f.slice(0, ultCol); });
 }
 
 /** Arma { nombreHoja: filas } con las hojas pedidas que existan en esta planilla. */
@@ -42,11 +56,14 @@ function enviar_(archivo, sheets) {
     throw new Error('Faltan SYNC_URL o SYNC_SECRET en Propiedades del script (Configuración del proyecto).');
   }
 
+  // Se manda comprimido (gzip): Vercel rechaza pedidos de más de ~4,5 MB y una planilla grande en JSON los pasa.
+  const json = JSON.stringify({ archivo: archivo, sheets: sheets });
+  const comprimido = Utilities.gzip(Utilities.newBlob(json, 'application/json', 'sync.json'), 'sync.json.gz');
   const res = UrlFetchApp.fetch(url, {
     method: 'post',
-    contentType: 'application/json',
-    headers: { Authorization: 'Bearer ' + secreto },
-    payload: JSON.stringify({ archivo: archivo, sheets: sheets }),
+    contentType: 'application/octet-stream',
+    headers: { Authorization: 'Bearer ' + secreto, 'X-Gzip': '1' },
+    payload: comprimido.getBytes(),
     muteHttpExceptions: true,
   });
 

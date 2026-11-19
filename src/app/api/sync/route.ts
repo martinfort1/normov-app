@@ -2,6 +2,7 @@
    (ver apps-script/), y lo sube a la base con la misma lógica que el importador manual.
    No usa la sesión del usuario: valida un secreto compartido y usa la service role key. */
 import { NextResponse } from 'next/server';
+import { gunzipSync } from 'node:zlib';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { importarPlanilla, importarDiego, importarCombustible } from '@/lib/sheets/importar';
 import type { Libro } from '@/lib/sheets/parsers';
@@ -24,7 +25,10 @@ export async function POST(req: Request) {
 
   let body: { archivo?: string; sheets?: Libro };
   try {
-    body = await req.json();
+    // Las planillas grandes llegan comprimidas (gzip): Vercel corta los pedidos de más de ~4,5 MB, y comprimido el JSON pesa una décima parte.
+    body = req.headers.get('x-gzip') === '1'
+      ? JSON.parse(gunzipSync(Buffer.from(await req.arrayBuffer())).toString('utf8'))
+      : await req.json();
   } catch {
     return NextResponse.json({ ok: false, error: 'Body inválido: se esperaba JSON.' }, { status: 400 });
   }
